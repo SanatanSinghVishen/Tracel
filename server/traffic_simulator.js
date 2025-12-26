@@ -1,47 +1,44 @@
 // server/traffic_simulator.js
 
-/**
- * TRACEL ENGINE: Network Traffic Simulator
- * Generates synthetic packets for analysis.
- */
-
-// CONFIGURATION
 const TARGET_IP = "10.0.0.1"; 
-let isAttackMode = false; // Toggle this to true to test "Hacker Mode"
+let isAttackMode = false; // Toggle this manually to test attack mode
 
-// 1. HELPER: Generate Random IP
 function getRandomIP() {
     return `192.168.1.${Math.floor(Math.random() * 255)}`; 
 }
 
-// 2. LOGIC: Get Source IP based on Mode
 function getSourceIP() {
-    // In Attack Mode, use a fixed "Botnet" IP
-    if (isAttackMode) return "66.66.66.66"; 
-    // In Normal Mode, use random user IPs
-    return getRandomIP(); 
+    if (isAttackMode) return "66.66.66.66"; // Hacker IP
+    return getRandomIP(); // Normal IP
 }
 
-// 3. MAIN ENGINE
-function generatePacket() {
-    const packet = {
-        id: Math.random().toString(36).substr(2, 9), // Unique ID
-        timestamp: new Date().toISOString(),
-        source_ip: getSourceIP(),
-        destination_ip: TARGET_IP,
-        method: isAttackMode ? "POST" : "GET", // Hackers often POST data
-        bytes: isAttackMode ? 5000 : Math.floor(Math.random() * 1000) + 200,
-    };
+/**
+ * Starts the Traffic Simulation
+ * @param {Object} io - The Socket.io server instance
+ */
+function startTraffic(io) {
+    function generatePacket() {
+        const packet = {
+            id: Math.random().toString(36).substr(2, 9),
+            timestamp: new Date().toISOString(),
+            source_ip: getSourceIP(),
+            destination_ip: TARGET_IP,
+            method: isAttackMode ? "POST" : "GET",
+            bytes: isAttackMode ? 5000 : Math.floor(Math.random() * 1000) + 200,
+        };
 
-    console.log(`[Tracel] Generated: ${packet.source_ip} | Size: ${packet.bytes}B`);
+        // 1. BROADCAST data to the frontend
+        io.emit('packet', packet);
+        
+        // 2. Log to terminal (so you know it's working)
+        console.log(`[Tracel] Emitted: ${packet.source_ip} | Size: ${packet.bytes}B`);
 
-    // Speed Control: 
-    // Attack = 50ms (Very Fast)
-    // Normal = 1000ms (1 Second)
-    const delay = isAttackMode ? 50 : 1000;
-    setTimeout(generatePacket, delay);
+        const delay = isAttackMode ? 50 : 1000;
+        setTimeout(generatePacket, delay);
+    }
+
+    generatePacket();
 }
 
-// Start the Engine
-console.log("--- TRACEL SIMULATOR STARTING ---");
-generatePacket();
+// Export the function so index.js can use it
+module.exports = { startTraffic };
