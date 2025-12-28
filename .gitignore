@@ -1,4 +1,31 @@
-node_modules
-.env
-__pycache__
+# Dependencies
+**/node_modules/
+
+# Build outputs
+**/dist/
+**/build/
+**/.vite/
+
+# Environment files (keep *.env.example tracked)
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python
+**/__pycache__/
+**/*.py[cod]
+**/.pytest_cache/
+**/venv/
+**/.venv/
+
+# Logs
+**/*.log
+
+# Local data files
+**/*.jsonl
+
+# ML artifacts
+**/*.pkl
+
+# OS/editor
 .DS_Store

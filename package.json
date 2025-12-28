@@ -1,0 +1,16 @@
+{
+  "name": "tracel",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "install:all": "npm --prefix dashboard install && npm --prefix server install",
+    "dev": "concurrently -n dashboard,server -c cyan,magenta \"npm --prefix dashboard run dev\" \"npm --prefix server run dev\"",
+    "dev:dashboard": "npm --prefix dashboard run dev",
+    "dev:server": "npm --prefix server run dev",
+    "build": "npm --prefix dashboard run build",
+    "lint": "npm --prefix dashboard run lint"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0"
+  }
+}
