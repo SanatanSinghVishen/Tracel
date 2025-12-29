@@ -108,10 +108,7 @@ export default function Dashboard() {
   // Uptime should reset when the server restarts.
   // We derive uptime from the server session start timestamp.
   useEffect(() => {
-    if (!uptimeStartMs) {
-      setStats((s) => (s.uptime === 0 ? s : { ...s, uptime: 0 }));
-      return undefined;
-    }
+    if (!uptimeStartMs) return undefined;
 
     const tick = () => {
       const seconds = Math.max(0, Math.floor((Date.now() - uptimeStartMs) / 1000));
@@ -171,8 +168,13 @@ export default function Dashboard() {
   const attackActive = !!currentPacket?.is_anomaly;
 
   return (
-    <div className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden flex flex-col gap-4 animate-fade-in">
-      <ChatAssistant />
+    <div className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden scroll-hidden flex flex-col gap-4 animate-fade-in">
+      <ChatAssistant
+        connection={connection}
+        stats={stats}
+        currentPacket={currentPacket}
+        trafficView={trafficView}
+      />
       {/* Header */}
       <div className="glass-card glow-hover p-5 sm:p-6 shrink-0">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -281,7 +283,7 @@ export default function Dashboard() {
         </div>
 
         <div className="glass-card glow-hover p-5 hover-lift">
-          <p className="text-slate-400 text-xs uppercase tracking-wider">Threats (24h)</p>
+          <p className="text-slate-400 text-xs uppercase tracking-wider">Threats (24 Hours)</p>
           <p className="mt-2 text-3xl font-semibold text-white data-mono tabular-nums whitespace-nowrap leading-none">
             {stats.threats.toLocaleString()}
           </p>
@@ -428,7 +430,7 @@ export default function Dashboard() {
             <h2 className="text-slate-400 mb-3 flex items-center gap-2 uppercase tracking-wider text-[10px]">
               <Terminal size={12} /> Live System Logs
             </h2>
-            <div className="flex-1 min-h-0 overflow-y-auto space-y-2 pr-2">
+            <div className="flex-1 min-h-0 overflow-y-auto scroll-hidden space-y-2 pr-2">
               {logs.length === 0 ? (
                 <div className="space-y-2">
                   <div className="h-4 w-3/4 skeleton" />

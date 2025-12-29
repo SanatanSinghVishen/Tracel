@@ -27,10 +27,26 @@ function formatAssistantText(raw) {
   // If the model echoes our internal prompt labels, normalize to user-friendly headings.
   t = t.replace(/\bSECTION\s*1\s*\(Project Info\)\s*:\s*/gi, 'Project Info:\n');
   t = t.replace(/\bSECTION\s*2\s*\(Live Status\)\s*:\s*/gi, 'Live Status:\n');
+  t = t.replace(/\bSECTION\s*2\s*\(Platform Knowledge\)\s*:\s*/gi, 'Platform Knowledge:\n');
+  t = t.replace(/\bSECTION\s*3\s*\(Live Status\)\s*:\s*/gi, 'Live Status:\n');
+  t = t.replace(/\bSECTION\s*4\s*\(Client Context, if provided\)\s*:\s*/gi, 'Client Context:\n');
 
   // Ensure headings are separated from previous content.
   t = t.replace(/(^|\n)(Project Info:)/g, '$1$2');
   t = t.replace(/(^|\n)(Live Status:)/g, '$1$2');
+  t = t.replace(/(^|\n)(Platform Knowledge:)/g, '$1$2');
+  t = t.replace(/(^|\n)(Client Context:)/g, '$1$2');
+
+  // Strip common Markdown asterisk formatting.
+  // Bold/italic: **text** or *text* -> text
+  t = t.replace(/\*\*([^*]+)\*\*/g, '$1');
+  t = t.replace(/\*([^*\n]+)\*/g, '$1');
+
+  // Bullet lists: "* item" -> "- item" (keep structure, remove asterisks)
+  t = t.replace(/^\s*\*\s+/gm, '- ');
+
+  // Remove leftover runs of asterisks used as separators.
+  t = t.replace(/\*{2,}/g, '');
 
   return t.trim() || '—';
 }
@@ -93,7 +109,12 @@ function ScanningWave() {
   );
 }
 
-export default function ChatAssistant() {
+export default function ChatAssistant({
+  connection,
+  stats,
+  currentPacket,
+  trafficView,
+} = {}) {
   const { isLoaded, getToken } = useAuth();
   const anonId = useMemo(() => getOrCreateAnonId(), []);
   const [open, setOpen] = useState(false);
@@ -247,13 +268,62 @@ export default function ChatAssistant() {
       const headers = new Headers(baseHeaders);
       headers.set('Content-Type', 'application/json');
 
-      const res = await fetch(u.toString(), {
-        method: 'POST',
-        headers,
-        credentials: 'include',
-        cache: 'no-store',
-        body: JSON.stringify({ message: text }),
-      });
+              const res = await fetch(u.toString(), {
+                method: 'POST',
+                headers,
+                credentials: 'include',
+                cache: 'no-store',
+                body: JSON.stringify({
+                  message: text,
+                  history: messages
+                    .slice(-12)
+                    .map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '') }))
+                    .filter((m) => m.content.trim()),
+                  clientContext: {
+                    pathname: typeof window !== 'undefined' ? window.location?.pathname : null,
+                    timezone: (() => {
+                      try {
+                        return Intl.DateTimeFormat().resolvedOptions().timeZone;
+                      } catch {
+                        return null;
+                      }
+                    })(),
+                    trafficView: (() => {
+                      try {
+                        return window.localStorage.getItem('tracel_default_traffic_view');
+                      } catch {
+                        return null;
+                      }
+                    })(),
+                    ui: {
+                      connection: connection
+                        ? {
+                            connected: !!connection.connected,
+                          }
+                        : null,
+                      trafficView: typeof trafficView === 'string' ? trafficView : null,
+                      stats: stats && typeof stats === 'object'
+                        ? {
+                            packets: typeof stats.packets === 'number' ? stats.packets : null,
+                            threats: typeof stats.threats === 'number' ? stats.threats : null,
+                            uptime: typeof stats.uptime === 'number' ? stats.uptime : null,
+                          }
+                        : null,
+                      currentPacket: currentPacket && typeof currentPacket === 'object'
+                        ? {
+                            timestamp: currentPacket.timestamp || null,
+                            source_ip: currentPacket.source_ip || null,
+                            destination_ip: currentPacket.destination_ip || null,
+                            method: currentPacket.method || null,
+                            bytes: typeof currentPacket.bytes === 'number' ? currentPacket.bytes : null,
+                            is_anomaly: !!currentPacket.is_anomaly,
+                            anomaly_score: typeof currentPacket.anomaly_score === 'number' ? currentPacket.anomaly_score : null,
+                          }
+                        : null,
+                    },
+                  },
+                }),
+              });
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data?.ok) {
@@ -395,7 +465,7 @@ export default function ChatAssistant() {
               </div>
 
               {/* Messages */}
-              <div className="relative px-4 py-4 max-h-[min(62vh,520px)] overflow-y-auto space-y-3 bg-slate-950/25">
+              <div className="relative px-4 py-4 max-h-[min(62vh,520px)] overflow-y-auto scroll-hidden space-y-3 bg-slate-950/25">
                 {messages.map((m) => {
                   const isUser = m.role === 'user';
                   const isError = m.tone === 'error';

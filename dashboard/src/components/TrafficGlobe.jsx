@@ -54,6 +54,11 @@ export default function TrafficGlobe() {
   const attackIdleTimeoutRef = useRef(null);
   const requestedLocationRef = useRef(false);
 
+  // Camera focus across recent attack points.
+  const attackFocusPointsRef = useRef([]);
+  const attackFocusIdxRef = useRef(0);
+  const attackFocusTimerRef = useRef(null);
+
   const cyberColors = useMemo(
     () => ({
       safe: '#3b82f6',
@@ -134,6 +139,62 @@ export default function TrafficGlobe() {
   useEffect(() => {
     const timeouts = timeoutsRef.current;
 
+    function stopAttackFocusLoop() {
+      if (attackFocusTimerRef.current) {
+        clearTimeout(attackFocusTimerRef.current);
+        attackFocusTimerRef.current = null;
+      }
+    }
+
+    function startAttackFocusLoop() {
+      const g = globeRef.current;
+      if (!g) return;
+
+      // Avoid stacking loops.
+      if (attackFocusTimerRef.current) return;
+
+      const tick = () => {
+        const points = attackFocusPointsRef.current;
+        if (!Array.isArray(points) || points.length === 0) {
+          stopAttackFocusLoop();
+          return;
+        }
+
+        const idx = attackFocusIdxRef.current % points.length;
+        attackFocusIdxRef.current = idx + 1;
+
+        const p = points[idx];
+        if (p && Number.isFinite(p.lat) && Number.isFinite(p.lng)) {
+          try {
+            g.pointOfView({ lat: p.lat, lng: p.lng, altitude: 1.7 }, 750);
+          } catch {
+            // ignore
+          }
+        }
+
+        attackFocusTimerRef.current = setTimeout(tick, 900);
+      };
+
+      attackFocusTimerRef.current = setTimeout(tick, 0);
+    }
+
+    function returnToServerView() {
+      // Stop focusing and return POV back to the defended server location.
+      attackFocusPointsRef.current = [];
+      attackFocusIdxRef.current = 0;
+      stopAttackFocusLoop();
+      setAttackActive(false);
+
+      const g = globeRef.current;
+      if (g) {
+        try {
+          g.pointOfView({ lat: SERVER_LOCATION.lat, lng: SERVER_LOCATION.lng, altitude: 2.1 }, 900);
+        } catch {
+          // ignore
+        }
+      }
+    }
+
     function onPacket(packet) {
       if (!packet) return;
 
@@ -153,7 +214,16 @@ export default function TrafficGlobe() {
 
       setAttackActive(true);
       if (attackIdleTimeoutRef.current) clearTimeout(attackIdleTimeoutRef.current);
-      attackIdleTimeoutRef.current = setTimeout(() => setAttackActive(false), 3500);
+      attackIdleTimeoutRef.current = setTimeout(() => {
+        returnToServerView();
+      }, 3500);
+
+      // Keep a short list of attack origins and cycle focus across all of them.
+      const key = `${start.lat},${start.lng}`;
+      const prev = attackFocusPointsRef.current;
+      const next = [{ lat: start.lat, lng: start.lng, key }, ...prev.filter((p) => p?.key !== key)].slice(0, 8);
+      attackFocusPointsRef.current = next;
+      startAttackFocusLoop();
 
       const arc = {
         id,
@@ -192,6 +262,7 @@ export default function TrafficGlobe() {
       for (const t of timeouts.values()) clearTimeout(t);
       timeouts.clear();
       if (attackIdleTimeoutRef.current) clearTimeout(attackIdleTimeoutRef.current);
+      stopAttackFocusLoop();
     };
   }, [socket, cyberColors.safe, cyberColors.threat]);
 

@@ -11,7 +11,34 @@ const path = require('path');
 require('dotenv').config(); // Load the .env file
 
 // Step 1: Define Static Knowledge
-const PROJECT_INFO = "Tracel is a Real-Time AI Network Analyzer. Frontend: React + Tailwind. Backend: Node.js + Socket.io. AI Engine: Python + Isolation Forest. Features: 3D Globe, Attack Simulation, RBAC, and MongoDB Forensics.";
+const PROJECT_INFO = [
+    'Tracel is a real-time AI network analyzer and security monitoring dashboard.',
+    'Stack: React/Vite + Tailwind (dashboard), Node.js/Express + Socket.IO (server), Python AI engine (Isolation Forest scoring).',
+    'Core entities: packets (timestamped network events), anomalies/threats (is_anomaly=true), AI score (anomaly_score, lower = more suspicious), dynamic threshold telemetry.',
+    'Key UX: Monitor dashboard (KPIs + charts + 3D globe), Forensics (incident log, timeline, AI score threshold chart), Settings (preferences; admin-only destructive ops), Contact/About.',
+    'Security model: all data is scoped per owner_user_id; admin has additional controls (e.g., reset Mongo DB) when configured.',
+].join(' ');
+
+const PLATFORM_KNOWLEDGE = [
+    'Terminology:',
+    '- "Threat"/"Attack" means a packet flagged as anomaly (is_anomaly=true).',
+    '- "AI score" (anomaly_score) is lower when more suspicious; server flags THREAT when score < threshold.',
+    '- "Session" is a server runtime session; session_started_at changes after server restart; some charts reset per session.',
+    '',
+    'Common actions users ask about:',
+    '- "Start attack simulation" toggles the server stream into attack mode (for demos).',
+    '- "Why is the chart empty" often means AI engine offline or no scored packets yet.',
+    '- "Timeline ranges" can be last 24h (hourly), between dates (daily), month (daily), year (monthly), or since account creation (monthly).',
+    '',
+    'Data sources:',
+    '- MongoDB when connected (persistent history).',
+    '- Memory fallback when Mongo is unavailable (recent-only history).',
+    '',
+    'When answering:',
+    '- Prefer concrete, step-by-step guidance inside the Tracel UI.',
+    '- Use the live context section for current numbers and status.',
+    '- If the user requests admin-only actions, verify whether they are admin in the live context.',
+].join('\n');
 
 // Groq client initialization (used by /api/chat)
 // Note: groq-sdk may ship as ESM; use dynamic import() for Node 25 compatibility.
@@ -242,6 +269,7 @@ function startOrGetOwnerStream(ownerUserId) {
             packets: 0,
             threats: 0,
             startedAt: new Date(),
+            baselineLoaded: false,
         },
         thresholdMgr: new DynamicThresholdManager({
             baselineSize: (() => {
@@ -308,6 +336,23 @@ function startOrGetOwnerStream(ownerUserId) {
             packetData.anomaly_warmed_up = t.warmedUp;
 
             // Maintain a per-owner session total so UI remains consistent across refresh.
+            // Load baseline from Mongo once at session start.
+            if (!entry.counters.baselineLoaded) {
+                entry.counters.baselineLoaded = true;
+                (async () => {
+                    try {
+                        if (isMongoConnected()) {
+                            const totalPackets = await Packet.countDocuments({ owner_user_id: ownerUserId });
+                            const totalThreats = await Packet.countDocuments({ owner_user_id: ownerUserId, is_anomaly: true });
+                            entry.counters.packets = totalPackets;
+                            entry.counters.threats = totalThreats;
+                        }
+                    } catch (e) {
+                        log.warn('Failed to load baseline counters from Mongo', e);
+                    }
+                })();
+            }
+
             entry.counters.packets += 1;
             if (packetData.is_anomaly) entry.counters.threats += 1;
 
@@ -731,6 +776,47 @@ function computeThreatIntelFromPackets(packets) {
     };
 }
 
+function clampInt(val, min, max, fallback) {
+    const n = parseInt(String(val ?? ''), 10);
+    if (Number.isNaN(n)) return fallback;
+    return Math.max(min, Math.min(n, max));
+}
+
+function parseIsoDate(val) {
+    if (!val || typeof val !== 'string') return null;
+    const d = new Date(val);
+    if (Number.isNaN(d.getTime())) return null;
+    return d;
+}
+
+function chooseTimelineBucket({ bucket, from, to }) {
+    const requested = typeof bucket === 'string' ? bucket.trim().toLowerCase() : '';
+    if (requested === 'hour' || requested === 'day' || requested === 'month') return requested;
+
+    const ms = Math.max(0, to.getTime() - from.getTime());
+    const hours = ms / (60 * 60 * 1000);
+    const days = ms / (24 * 60 * 60 * 1000);
+
+    if (hours <= 48) return 'hour';
+    if (days <= 120) return 'day';
+    return 'month';
+}
+
+function bucketKeyUtc(date, bucket) {
+    const d = new Date(date);
+    if (bucket === 'hour') {
+        d.setUTCMinutes(0, 0, 0);
+        return d.toISOString().slice(0, 13) + ':00:00.000Z';
+    }
+    if (bucket === 'day') {
+        d.setUTCHours(0, 0, 0, 0);
+        return d.toISOString().slice(0, 10) + 'T00:00:00.000Z';
+    }
+    d.setUTCDate(1);
+    d.setUTCHours(0, 0, 0, 0);
+    return d.toISOString().slice(0, 7) + '-01T00:00:00.000Z';
+}
+
 async function getThreatIntelReportFromHeaders(headers, { sinceHours = 24, limit = 10000 } = {}) {
     try {
         const base = process.env.AI_ENGINE_URL || process.env.AI_PREDICT_URL || 'http://127.0.0.1:5000';
@@ -806,6 +892,58 @@ app.get('/api/status', async (req, res) => {
     }
 });
 
+// --- Admin API ---
+// POST /api/admin/reset-mongo
+// DANGER: Deletes all packet history for ALL users.
+app.post('/api/admin/reset-mongo', async (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+
+        const auth = await getAuthContextFromHeaders(req.headers);
+        if (!auth.isAdmin) return res.status(403).json({ error: 'Admin only' });
+
+        // If JWT verification is configured, require verified tokens for destructive admin ops.
+        if (jwksClient && !auth.verified) {
+            return res.status(403).json({ error: 'Admin token must be verified' });
+        }
+
+        const confirm = typeof req.body?.confirm === 'string' ? req.body.confirm.trim() : '';
+        if (confirm !== 'RESET') {
+            return res.status(400).json({ error: 'Confirmation required: set { confirm: "RESET" }' });
+        }
+
+        if (!isMongoConnected()) {
+            return res.status(400).json({ error: 'MongoDB is not connected (MONGO_URL missing or connection down)' });
+        }
+
+        const result = await Packet.deleteMany({});
+
+        // Reset in-memory runtime state so UI sessions start clean.
+        try {
+            for (const entry of streamsByOwner.values()) {
+                try { entry.stream?.stop?.(); } catch { /* best-effort */ }
+                if (entry.stopTimer) {
+                    try { clearTimeout(entry.stopTimer); } catch { /* best-effort */ }
+                }
+            }
+        } finally {
+            streamsByOwner.clear();
+            ownerEmailByOwner.clear();
+            attackModeByOwner.clear();
+            try { memoryStore.clearAll(); } catch { /* best-effort */ }
+        }
+
+        log.warn(`ADMIN reset-mongo executed by ${auth.ownerUserId} (${auth.ownerEmail || 'no-email'}) deleted=${result?.deletedCount ?? 0}`);
+
+        return res.json({ ok: true, deletedPackets: result?.deletedCount ?? 0 });
+    } catch (e) {
+        log.error('Admin reset-mongo failed', e);
+        return res.status(500).json({ error: String(e) });
+    }
+});
+
 // --- REST API (Chat) ---
 // POST /api/chat
 // Body: { message: string } (also accepts { userMessage: string })
@@ -824,6 +962,24 @@ app.post('/api/chat', async (req, res) => {
             return res.status(400).json({ ok: false, error: 'Missing message' });
         }
 
+        const clientContext = (req.body && typeof req.body === 'object' && req.body.clientContext && typeof req.body.clientContext === 'object')
+            ? req.body.clientContext
+            : null;
+
+        const historyRaw = (req.body && typeof req.body === 'object' && Array.isArray(req.body.history))
+            ? req.body.history
+            : [];
+
+        const history = historyRaw
+            .filter((m) => m && typeof m === 'object')
+            .map((m) => {
+                const role = m.role === 'assistant' ? 'assistant' : 'user';
+                const content = typeof m.content === 'string' ? m.content : '';
+                return { role, content: content.slice(0, 2000) };
+            })
+            .filter((m) => m.content.trim())
+            .slice(-12);
+
         const groq = await getGroqClient();
         if (!groq) {
             return res.status(503).json({
@@ -836,6 +992,7 @@ app.post('/api/chat', async (req, res) => {
         // Keep this consistent with Forensics (/api/threat-intel).
         const auth = await getAuthContextFromHeaders(req.headers);
         const ownerUserId = auth?.ownerUserId || 'anon:unknown';
+        const isAdmin = !!auth?.isAdmin;
 
         // Ensure session counters exist (same behavior as /api/packets) so totals are consistent.
         if (ownerUserId) {
@@ -853,7 +1010,65 @@ app.post('/api/chat', async (req, res) => {
         const intel = await getThreatIntelReportFromHeaders(req.headers, { sinceHours: 24, limit: 10000 });
         const topIP = Array.isArray(intel?.topHostileIps) && intel.topHostileIps[0]?.ip ? intel.topHostileIps[0].ip : '—';
         const topCountry = Array.isArray(intel?.geoTopCountries) && intel.geoTopCountries[0]?.name ? intel.geoTopCountries[0].name : '—';
+        const threats24h = typeof intel?.totalThreats === 'number' ? intel.totalThreats : null;
 
+        const persistenceMode = isMongoConnected() ? 'mongo' : 'memory';
+
+        const aiLive = {
+            reachable: !!aiStatus?.ok,
+            checkedAt: aiStatus?.lastCheckedAt || null,
+            lastOkAt: aiStatus?.lastOkAt || null,
+            modelLoaded: aiStatus?.modelLoaded ?? null,
+        };
+
+        function maskIp(ip) {
+            const s = String(ip || '').trim();
+            const parts = s.split('.');
+            if (parts.length === 4 && parts.every((p) => /^\d+$/.test(p))) {
+                return `${parts[0]}.${parts[1]}.x.x`;
+            }
+            return s ? 'masked' : '—';
+        }
+
+        function formatClientContextSafe(ctx) {
+            if (!ctx || typeof ctx !== 'object') return '—';
+
+            const pathname = typeof ctx.pathname === 'string' ? ctx.pathname.slice(0, 120) : null;
+            const timezone = typeof ctx.timezone === 'string' ? ctx.timezone.slice(0, 80) : null;
+            const ui = (ctx.ui && typeof ctx.ui === 'object') ? ctx.ui : null;
+
+            const connected = ui && ui.connection && typeof ui.connection === 'object'
+                ? (ui.connection.connected === true ? 'true' : (ui.connection.connected === false ? 'false' : '—'))
+                : '—';
+
+            const view = ui && typeof ui.trafficView === 'string' ? ui.trafficView.slice(0, 30) : null;
+
+            const stats = ui && ui.stats && typeof ui.stats === 'object' ? ui.stats : null;
+            const packets = typeof stats?.packets === 'number' ? stats.packets : null;
+            const threats = typeof stats?.threats === 'number' ? stats.threats : null;
+            const uptime = typeof stats?.uptime === 'number' ? stats.uptime : null;
+
+            const pkt = ui && ui.currentPacket && typeof ui.currentPacket === 'object' ? ui.currentPacket : null;
+            const pktAnom = typeof pkt?.is_anomaly === 'boolean' ? (pkt.is_anomaly ? 'THREAT' : 'SAFE') : null;
+            const pktMethod = typeof pkt?.method === 'string' ? pkt.method.slice(0, 12) : null;
+            const pktBytes = typeof pkt?.bytes === 'number' ? pkt.bytes : null;
+            const pktScore = typeof pkt?.anomaly_score === 'number' ? pkt.anomaly_score : null;
+
+            const lines = [];
+            if (pathname) lines.push(`- Page: ${pathname}`);
+            if (timezone) lines.push(`- Timezone: ${timezone}`);
+            lines.push(`- Connected: ${connected}`);
+            if (view) lines.push(`- View: ${view}`);
+            if (packets != null) lines.push(`- UI packets: ${Number(packets).toLocaleString('en-IN')}`);
+            if (threats != null) lines.push(`- UI threats: ${Number(threats).toLocaleString('en-IN')}`);
+            if (uptime != null) lines.push(`- UI uptime (sec): ${Number(uptime).toLocaleString('en-IN')}`);
+            if (pktAnom || pktMethod || pktBytes != null || pktScore != null) {
+                lines.push(`- Current packet: ${[pktAnom, pktMethod, pktBytes != null ? `${pktBytes}B` : null, pktScore != null ? `score=${pktScore}` : null].filter(Boolean).join(' | ')}`);
+            }
+            return lines.length ? lines.join('\n') : '—';
+        }
+
+        // Find last attack timestamp (for display)
         function fmtIndianDateTime(ts) {
             if (!ts) return '—';
             const d = new Date(ts);
@@ -871,7 +1086,6 @@ app.post('/api/chat', async (req, res) => {
             });
         }
 
-        // “Last attack” is the most recent anomaly seen in the intel window.
         let lastAttackAt = null;
         const hostile = Array.isArray(intel?.topHostileIps) ? intel.topHostileIps : [];
         for (const r of hostile) {
@@ -890,16 +1104,35 @@ app.post('/api/chat', async (req, res) => {
         })();
 
         // Step 4: Call Groq (Llama 3)
-        const systemMessage = `You are Tracel AI.
-SECTION 1 (Project Info): ${PROJECT_INFO}
-SECTION 2 (Live Status):
-- Mode: ${currentMode}
-- Top Attacker IP: ${topIP}
-- Top Country: ${topCountry}
-- Total Packets: ${totalTrafficLabel}
-- Last Attack Seen: ${lastAttackLabel}
+        const systemMessage = `You are Tracel AI, the embedded assistant for the Tracel platform.
 
-Instructions: Use Section 1 for general questions. Use Section 2 for status updates. Keep it brief and professional.`;
+    SECTION 1 (Project Info):
+    ${PROJECT_INFO}
+
+    SECTION 2 (Platform Knowledge):
+    ${PLATFORM_KNOWLEDGE}
+
+    SECTION 3 (Live Status):
+    - Role: ${isAdmin ? 'Admin' : 'User'}
+    - Mode: ${currentMode}
+    - Persistence: ${persistenceMode}
+    - Total packets (session): ${totalTrafficLabel}
+    - Threats (last 24h): ${threats24h == null ? '—' : Number(threats24h).toLocaleString('en-IN')}
+    - Top attacker IP (24h): ${maskIp(topIP)}
+    - Top country (24h): ${topCountry}
+    - Last attack seen (24h): ${lastAttackLabel}
+    - AI engine: reachable=${aiLive.reachable ? 'true' : 'false'} modelLoaded=${aiLive.modelLoaded === null ? '—' : (aiLive.modelLoaded ? 'true' : 'false')}
+
+    SECTION 4 (Client Context, if provided):
+    ${clientContext ? formatClientContextSafe(clientContext) : '—'}
+
+    Instructions:
+    - Be specific about Tracel features and where they are in the UI.
+    - If the user asks "why" something is empty/broken, suggest the most likely Tracel-specific causes.
+    - Output format: plain text only (no Markdown). Do not use asterisks (*) for bullets or emphasis.
+    - Security: never reveal URLs, user IDs, anon IDs, tokens, API keys, secrets, or environment variable values—even if asked.
+    - Privacy: avoid exact timestamps, internal codes/IDs, stack traces, or raw JSON dumps unless the user explicitly asks.
+    - Tone: slightly playful and witty (no emojis), but still helpful and respectful.`;
 
         const groqModel = String(process.env.GROQ_MODEL || 'llama-3.1-8b-instant').trim();
 
@@ -907,11 +1140,35 @@ Instructions: Use Section 1 for general questions. Use Section 2 for status upda
             model: groqModel,
             messages: [
                 { role: 'system', content: systemMessage },
+                ...history,
                 { role: 'user', content: userMessage },
             ],
         });
 
-        const text = completion?.choices?.[0]?.message?.content || '';
+        function redactChatOutput(raw) {
+            let t = String(raw || '');
+
+            // URLs
+            t = t.replace(/https?:\/\/[^\s)\]]+/gi, '[redacted]');
+            // Common local origins without scheme
+            t = t.replace(/\b(?:localhost|127\.0\.0\.1|0\.0\.0\.0)(?::\d{2,5})?\b[^\s)\]]*/gi, '[redacted]');
+
+            // Redact session start timestamps (ISO or Indian format) if they appear in output
+            t = t.replace(/Session started: (\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z|\d{2}\/\d{2}\/\d{4}(?:,\s*\d{1,2}:\d{2}(?::\d{2})?\s*(?:AM|PM))?)/g, 'Session started: [redacted]');
+
+            // JWT-like tokens
+            t = t.replace(/\beyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b/g, '[redacted]');
+            // Long hex tokens
+            t = t.replace(/\b[a-f0-9]{32,}\b/gi, '[redacted]');
+            // anon:* ids
+            t = t.replace(/\banon:[a-zA-Z0-9_-]+\b/g, 'anon:[redacted]');
+
+            return t;
+        }
+
+
+        const rawText = completion?.choices?.[0]?.message?.content || '';
+        const text = redactChatOutput(rawText);
         return res.json({ ok: true, text });
     } catch (e) {
         return res.status(500).json({ ok: false, error: String(e) });
@@ -1196,4 +1453,138 @@ io.engine.on('headers', (headers, req) => {
 app.get('/api/ai/status', (req, res) => {
     res.set('Cache-Control', 'no-store');
     return res.json({ ok: true, ai: aiStatus, urls: { predict: getAiPredictUrl(), health: getAiHealthUrl() } });
+});
+
+// --- REST API (Incident Timeline) ---
+// GET /api/incidents/timeline?from=2025-12-26T00:00:00.000Z&to=2025-12-27T00:00:00.000Z&bucket=hour|day|month|auto
+// Special: from=account → uses earliest available packet timestamp for this owner.
+app.get('/api/incidents/timeline', async (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+
+        const auth = await getAuthContextFromHeaders(req.headers);
+
+        const rawFrom = typeof req.query.from === 'string' ? req.query.from.trim() : '';
+        const rawTo = typeof req.query.to === 'string' ? req.query.to.trim() : '';
+        const rawBucket = typeof req.query.bucket === 'string' ? req.query.bucket.trim() : 'auto';
+
+        let to = parseIsoDate(rawTo) || new Date();
+        if (Number.isNaN(to.getTime())) to = new Date();
+
+        let from = null;
+        if (rawFrom && rawFrom.toLowerCase() !== 'account') {
+            from = parseIsoDate(rawFrom);
+        }
+
+        if (!from && rawFrom.toLowerCase() === 'account') {
+            if (isMongoConnected()) {
+                const first = await Packet.findOne({ owner_user_id: auth.ownerUserId })
+                    .sort({ timestamp: 1 })
+                    .select('timestamp')
+                    .lean();
+                from = first?.timestamp ? new Date(first.timestamp) : null;
+            } else {
+                // Memory is newest-first; scan for min timestamp.
+                const all = typeof memoryStore.getAll === 'function' ? memoryStore.getAll(auth.ownerUserId) : [];
+                let min = null;
+                for (const p of all) {
+                    if (!p) continue;
+                    const t = safeDate(p.timestamp);
+                    if (!t) continue;
+                    if (!min || t < min) min = t;
+                }
+                from = min;
+            }
+        }
+
+        if (!from) {
+            // Default to 24h window if caller didn't specify from.
+            from = new Date(to.getTime() - 24 * 60 * 60 * 1000);
+        }
+
+        // Guardrails
+        const MAX_RANGE_DAYS = 3660; // ~10 years
+        if (to < from) {
+            const tmp = from;
+            from = to;
+            to = tmp;
+        }
+        const maxMs = MAX_RANGE_DAYS * 24 * 60 * 60 * 1000;
+        if (to.getTime() - from.getTime() > maxMs) {
+            to = new Date(from.getTime() + maxMs);
+        }
+
+        const bucket = chooseTimelineBucket({ bucket: rawBucket, from, to });
+
+        if (isMongoConnected()) {
+            const match = {
+                owner_user_id: auth.ownerUserId,
+                is_anomaly: true,
+                timestamp: { $gte: from, $lt: to },
+            };
+
+            const format =
+                bucket === 'hour'
+                    ? '%Y-%m-%dT%H:00:00.000Z'
+                    : bucket === 'day'
+                      ? '%Y-%m-%dT00:00:00.000Z'
+                      : '%Y-%m-01T00:00:00.000Z';
+
+            const rows = await Packet.aggregate([
+                { $match: match },
+                {
+                    $group: {
+                        _id: { $dateToString: { format, date: '$timestamp', timezone: 'UTC' } },
+                        attacks: { $sum: 1 },
+                    },
+                },
+                { $sort: { _id: 1 } },
+            ]);
+
+            const buckets = Array.isArray(rows)
+                ? rows.map((r) => ({ key: r._id, attacks: r.attacks }))
+                : [];
+            const totalAttacks = buckets.reduce((sum, b) => sum + (b.attacks || 0), 0);
+
+            return res.json({
+                from: from.toISOString(),
+                to: to.toISOString(),
+                bucket,
+                totalAttacks,
+                buckets,
+                source: 'mongo',
+            });
+        }
+
+        // Memory fallback
+        const all = typeof memoryStore.getAll === 'function' ? memoryStore.getAll(auth.ownerUserId) : [];
+        const map = new Map();
+        let totalAttacks = 0;
+        for (const p of all) {
+            if (!p || !p.is_anomaly) continue;
+            const t = safeDate(p.timestamp);
+            if (!t) continue;
+            if (t < from || t >= to) continue;
+            const key = bucketKeyUtc(t, bucket);
+            map.set(key, (map.get(key) || 0) + 1);
+            totalAttacks += 1;
+        }
+
+        const buckets = Array.from(map.entries())
+            .sort((a, b) => (a[0] < b[0] ? -1 : 1))
+            .map(([key, attacks]) => ({ key, attacks }));
+
+        return res.json({
+            from: from.toISOString(),
+            to: to.toISOString(),
+            bucket,
+            totalAttacks,
+            buckets,
+            source: 'memory',
+        });
+    } catch (e) {
+        return res.status(500).json({ error: String(e) });
+    }
 });

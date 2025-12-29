@@ -40,7 +40,7 @@ const clerkAppearance = {
 
 function AuthShell({ children }) {
   return (
-    <div className="min-h-screen overflow-y-auto">
+    <div className="min-h-screen overflow-y-auto scroll-hidden">
       <div className="min-h-screen flex items-center justify-center p-6 sm:p-10">
         <div className="w-full max-w-[720px]">
           {children}

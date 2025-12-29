@@ -30,6 +30,51 @@ function fmtTime(ts) {
   return d.toLocaleString();
 }
 
+function toDateInputValue(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function toMonthInputValue(d) {
+  if (!(d instanceof Date) || Number.isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+function bucketLabelFromKey(key, bucket) {
+  const d = new Date(key);
+  if (Number.isNaN(d.getTime())) return String(key || '');
+  if (bucket === 'hour') {
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+  }
+  if (bucket === 'day') {
+    return d.toLocaleDateString([], { month: 'short', day: '2-digit' });
+  }
+  return d.toLocaleDateString([], { month: 'short', year: 'numeric' });
+}
+
+function alignUtc(date, bucket) {
+  const d = new Date(date);
+  if (bucket === 'hour') d.setUTCMinutes(0, 0, 0);
+  else if (bucket === 'day') d.setUTCHours(0, 0, 0, 0);
+  else {
+    d.setUTCDate(1);
+    d.setUTCHours(0, 0, 0, 0);
+  }
+  return d;
+}
+
+function bucketKeyUtc(date, bucket) {
+  const d = alignUtc(date, bucket);
+  if (bucket === 'hour') return d.toISOString().slice(0, 13) + ':00:00.000Z';
+  if (bucket === 'day') return d.toISOString().slice(0, 10) + 'T00:00:00.000Z';
+  return d.toISOString().slice(0, 7) + '-01T00:00:00.000Z';
+}
+
 export default function Forensics() {
   const { isLoaded, getToken } = useAuth();
   const { socket, connection } = useSocket();
@@ -40,6 +85,7 @@ export default function Forensics() {
   // Separate, unfiltered score history used only for the AI chart.
   // This keeps the chart stable even when the incident filters change.
   const [scorePackets, setScorePackets] = useState([]);
+  const scoreSessionStartedAtRef = useRef(null);
   const [selected, setSelected] = useState(null);
 
   const [scoreWindowSize, setScoreWindowSize] = useState(35);
@@ -170,6 +216,41 @@ export default function Forensics() {
   const [timelineLoading, setTimelineLoading] = useState(false);
   const [timelineError, setTimelineError] = useState('');
   const [timeline, setTimeline] = useState([]);
+  const [timelineTotalAttacks, setTimelineTotalAttacks] = useState(0);
+  const [timelineMeta, setTimelineMeta] = useState({ from: null, to: null, bucket: 'hour', label: 'Last 24 hours' });
+
+  // Timeline range controls
+  const [timelineRangeOpen, setTimelineRangeOpen] = useState(false);
+  const timelineRangeRef = useRef(null);
+
+  const now = useMemo(() => new Date(), []);
+  const [timelineMode, setTimelineMode] = useState('day'); // 'day' | 'between' | 'month' | 'year' | 'account'
+  const [timelineFromDay, setTimelineFromDay] = useState(() => toDateInputValue(new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000)));
+  const [timelineToDay, setTimelineToDay] = useState(() => toDateInputValue(new Date()));
+  const [timelineMonth, setTimelineMonth] = useState(() => toMonthInputValue(new Date()));
+  const [timelineYear, setTimelineYear] = useState(() => String(new Date().getFullYear()));
+
+  useEffect(() => {
+    if (!timelineRangeOpen) return;
+
+    function onMouseDown(e) {
+      const el = timelineRangeRef.current;
+      if (!el) return;
+      if (el.contains(e.target)) return;
+      setTimelineRangeOpen(false);
+    }
+
+    function onKeyDown(e) {
+      if (e.key === 'Escape') setTimelineRangeOpen(false);
+    }
+
+    window.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [timelineRangeOpen]);
 
   // Threat Intelligence report (anomaly aggregates)
   const [intelLoading, setIntelLoading] = useState(false);
@@ -420,7 +501,22 @@ export default function Forensics() {
         if (!res.ok) return;
         if (cancelled) return;
         const list = Array.isArray(data.packets) ? data.packets : [];
-        setScorePackets(list);
+
+        const sessionStartedAt = typeof data?.session?.startedAt === 'string' ? data.session.startedAt : null;
+        const sessionStartMs = sessionStartedAt ? Date.parse(sessionStartedAt) : NaN;
+        if (sessionStartedAt && Number.isFinite(sessionStartMs) && sessionStartMs > 0) {
+          scoreSessionStartedAtRef.current = sessionStartedAt;
+
+          // Only seed the chart with packets from the *current* server session.
+          // This avoids mixing pre-restart points with post-restart points on a time-based X axis.
+          const filtered = list.filter((p) => {
+            const t = Date.parse(p?.timestamp);
+            return Number.isFinite(t) && t >= sessionStartMs;
+          });
+          setScorePackets(filtered);
+        } else {
+          setScorePackets(list);
+        }
       } catch {
         // ignore
       }
@@ -438,17 +534,85 @@ export default function Forensics() {
     setTimelineLoading(true);
     setTimelineError('');
 
-    try {
-      // Align to local hour boundaries for accurate “when” visualization.
-      const end = new Date();
-      end.setMinutes(0, 0, 0);
-      const start = new Date(end.getTime() - 23 * 60 * 60 * 1000);
-      const since = start.toISOString();
+    function parseYmd(s) {
+      const m = typeof s === 'string' ? s.match(/^(\d{4})-(\d{2})-(\d{2})$/) : null;
+      if (!m) return null;
+      const y = Number(m[1]);
+      const mo = Number(m[2]);
+      const d = Number(m[3]);
+      if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return null;
+      return { y, mo, d };
+    }
 
-      const u = new URL('/api/packets', baseUrl);
-      u.searchParams.set('limit', '1000');
-      u.searchParams.set('anomaly', '1');
-      u.searchParams.set('since', since);
+    function parseYm(s) {
+      const m = typeof s === 'string' ? s.match(/^(\d{4})-(\d{2})$/) : null;
+      if (!m) return null;
+      const y = Number(m[1]);
+      const mo = Number(m[2]);
+      if (!Number.isFinite(y) || !Number.isFinite(mo)) return null;
+      return { y, mo };
+    }
+
+    let from = null;
+    let to = null;
+    let bucket = 'auto';
+    let label = '';
+
+    if (timelineMode === 'account') {
+      from = 'account';
+      to = new Date();
+      bucket = 'month';
+      label = 'Since account creation';
+    } else if (timelineMode === 'year') {
+      const y = clampYear(timelineYear);
+      from = new Date(Date.UTC(y, 0, 1, 0, 0, 0, 0));
+      to = new Date(Date.UTC(y + 1, 0, 1, 0, 0, 0, 0));
+      bucket = 'month';
+      label = `Year ${y}`;
+    } else if (timelineMode === 'month') {
+      const ym = parseYm(timelineMonth);
+      const y = Number.isFinite(ym?.y) ? ym.y : new Date().getUTCFullYear();
+      const mo = Number.isFinite(ym?.mo) ? ym.mo : (new Date().getUTCMonth() + 1);
+      from = new Date(Date.UTC(y, mo - 1, 1, 0, 0, 0, 0));
+      to = new Date(Date.UTC(y, mo, 1, 0, 0, 0, 0));
+      bucket = 'day';
+      label = `Month ${String(y)}-${String(mo).padStart(2, '0')}`;
+    } else if (timelineMode === 'between') {
+      const a = parseYmd(timelineFromDay);
+      const b = parseYmd(timelineToDay);
+      if (a) from = new Date(Date.UTC(a.y, a.mo - 1, a.d, 0, 0, 0, 0));
+      if (b) to = new Date(Date.UTC(b.y, b.mo - 1, b.d + 1, 0, 0, 0, 0));
+      bucket = 'day';
+      label = `${timelineFromDay || '…'} → ${timelineToDay || '…'}`;
+    } else {
+      // day (rolling last 24 hours, aligned to current local hour)
+      const endHour = new Date();
+      endHour.setMinutes(0, 0, 0);
+      const startHour = new Date(endHour.getTime() - 23 * 60 * 60 * 1000);
+      from = startHour;
+      to = new Date(endHour.getTime() + 60 * 60 * 1000);
+      bucket = 'hour';
+      label = 'Last 24 hours';
+    }
+
+    function safeDate(val) {
+      const d = new Date(val);
+      if (Number.isNaN(d.getTime())) return null;
+      return d;
+    }
+
+    function clampYear(val) {
+      const n = parseInt(String(val ?? ''), 10);
+      if (!Number.isFinite(n)) return new Date().getUTCFullYear();
+      return Math.max(1970, Math.min(n, 2100));
+    }
+
+    try {
+      const u = new URL('/api/incidents/timeline', baseUrl);
+      if (from === 'account') u.searchParams.set('from', 'account');
+      else if (from instanceof Date) u.searchParams.set('from', from.toISOString());
+      if (to instanceof Date) u.searchParams.set('to', to.toISOString());
+      u.searchParams.set('bucket', bucket);
 
       const headers = await buildAuthHeaders(isLoaded ? getToken : null, anonId);
       const res = await fetch(u.toString(), { headers, credentials: 'include', cache: 'no-store' });
@@ -456,65 +620,92 @@ export default function Forensics() {
 
       if (!res.ok) {
         setTimeline([]);
+        setTimelineTotalAttacks(0);
         setTimelineError(data?.error || `Request failed (${res.status})`);
         return;
       }
 
-      const packets24 = Array.isArray(data.packets) ? data.packets : [];
+      const serverFrom = safeDate(data?.from) || (from === 'account' ? null : from);
+      const serverTo = safeDate(data?.to) || to;
+      const serverBucket = typeof data?.bucket === 'string' ? data.bucket : bucket;
 
-      // 24 buckets, hour by hour (start..end inclusive hours)
-      const buckets = Array.from({ length: 24 }, (_, i) => {
-        const d = new Date(start.getTime() + i * 60 * 60 * 1000);
-        return {
-          key: d.toISOString(),
-          label: d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
-          attacks: 0,
-        };
-      });
+      const rows = Array.isArray(data?.buckets) ? data.buckets : [];
+      const counts = new Map(rows.map((r) => [String(r?.key || ''), Number(r?.attacks || 0)]));
 
-      for (const p of packets24) {
-        const t = new Date(p.timestamp);
-        if (Number.isNaN(t.getTime())) continue;
-        const idx = Math.floor((t.getTime() - start.getTime()) / (60 * 60 * 1000));
-        if (idx >= 0 && idx < 24) buckets[idx].attacks += 1;
+      const start = serverFrom ? alignUtc(serverFrom, serverBucket) : null;
+      const end = serverTo ? new Date(serverTo) : null;
+
+      const filled = [];
+      if (start && end && !Number.isNaN(start.getTime()) && !Number.isNaN(end.getTime())) {
+        let cursor = new Date(start);
+        while (cursor < end) {
+          const key = bucketKeyUtc(cursor, serverBucket);
+          filled.push({
+            key,
+            label: bucketLabelFromKey(key, serverBucket),
+            attacks: counts.get(key) || 0,
+          });
+
+          if (serverBucket === 'hour') cursor = new Date(cursor.getTime() + 60 * 60 * 1000);
+          else if (serverBucket === 'day') cursor = new Date(cursor.getTime() + 24 * 60 * 60 * 1000);
+          else {
+            const next = new Date(cursor);
+            next.setUTCMonth(next.getUTCMonth() + 1);
+            cursor = next;
+          }
+
+          if (filled.length > 4000) break; // UI guardrail
+        }
       }
 
-      setTimeline(buckets);
+      setTimeline(filled);
+      setTimelineTotalAttacks(Number(data?.totalAttacks || 0));
+      setTimelineMeta({
+        from: (serverFrom && serverFrom.toISOString) ? serverFrom.toISOString() : (typeof data?.from === 'string' ? data.from : null),
+        to: (serverTo && serverTo.toISOString) ? serverTo.toISOString() : (typeof data?.to === 'string' ? data.to : null),
+        bucket: serverBucket,
+        label,
+      });
     } catch (e) {
       setTimeline([]);
+      setTimelineTotalAttacks(0);
       setTimelineError(String(e));
     } finally {
       setTimelineLoading(false);
     }
-  }, [baseUrl, isLoaded, getToken, anonId]);
+  }, [baseUrl, isLoaded, getToken, anonId, timelineMode, timelineFromDay, timelineToDay, timelineMonth, timelineYear]);
 
   // Live refresh: update the current bucket whenever an attack arrives.
   useEffect(() => {
     function onPacket(p) {
       if (!p || !p.is_anomaly) return;
 
+      const from = timelineMeta?.from ? new Date(timelineMeta.from) : null;
+      const to = timelineMeta?.to ? new Date(timelineMeta.to) : null;
+      const bucket = timelineMeta?.bucket || 'hour';
+      if (!from || !to || Number.isNaN(from.getTime()) || Number.isNaN(to.getTime())) return;
+
+      const t = new Date(p.timestamp || Date.now());
+      if (Number.isNaN(t.getTime())) return;
+      if (t < from || t >= to) return;
+
+      const key = bucketKeyUtc(t, bucket);
+
       setTimeline((prev) => {
-        if (!prev || prev.length !== 24) return prev;
-        const start = new Date(prev[0].key);
-        if (Number.isNaN(start.getTime())) return prev;
-
-        const t = new Date(p.timestamp || Date.now());
-        const idx = Math.floor((t.getTime() - start.getTime()) / (60 * 60 * 1000));
-        if (idx < 0 || idx >= 24) {
-          // Timeline window has shifted (e.g., hour rolled over) — reload.
-          loadTimeline();
-          return prev;
-        }
-
+        if (!Array.isArray(prev) || prev.length === 0) return prev;
+        const idx = prev.findIndex((b) => b && b.key === key);
+        if (idx === -1) return prev;
         const next = prev.slice();
         next[idx] = { ...next[idx], attacks: (next[idx].attacks || 0) + 1 };
         return next;
       });
+
+      setTimelineTotalAttacks((n) => (Number.isFinite(n) ? n + 1 : 1));
     }
 
     socket.on('packet', onPacket);
     return () => socket.off('packet', onPacket);
-  }, [socket, loadTimeline]);
+  }, [socket, loadTimeline, timelineMeta]);
 
   function downloadFile(filename, content, mime) {
     const blob = new Blob([content], { type: mime });
@@ -580,6 +771,17 @@ export default function Forensics() {
   useEffect(() => {
     function onScorePacket(p) {
       setScorePackets((prev) => {
+        const sessionStartedAt = typeof p?.session_started_at === 'string' ? p.session_started_at : null;
+        if (sessionStartedAt) {
+          // When the server restarts, it starts a new session. Mixing sessions on a time-based X axis
+          // compresses older points to the left and makes the chart look broken.
+          if (scoreSessionStartedAtRef.current && scoreSessionStartedAtRef.current !== sessionStartedAt) {
+            scoreSessionStartedAtRef.current = sessionStartedAt;
+            return [p].slice(0, 300);
+          }
+          if (!scoreSessionStartedAtRef.current) scoreSessionStartedAtRef.current = sessionStartedAt;
+        }
+
         const id = p?._id || null;
         const next = id ? prev.filter((x) => x?._id !== id) : prev;
         // Keep newest-first (same convention as API) and cap memory.
@@ -606,7 +808,7 @@ export default function Forensics() {
   }, []);
 
   return (
-    <div className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden space-y-6 animate-fade-in">
+    <div className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden scroll-hidden space-y-6 animate-fade-in">
       <div className="glass-card glow-hover p-5 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -675,16 +877,146 @@ export default function Forensics() {
         <div className="flex items-center justify-between mb-3">
           <div>
             <p className="text-xs text-slate-400 uppercase tracking-wider">Incident Timeline</p>
-            <h2 className="text-sm font-semibold text-slate-200">Attacks in the last 24 hours</h2>
+            <h2 className="text-sm font-semibold text-slate-200">{timelineMeta?.label || 'Attacks'}</h2>
           </div>
-          <button
-            onClick={loadTimeline}
-            className="glass rounded-2xl border border-white/10 px-3 py-2 text-sm text-white hover:bg-white/10 transition"
-            disabled={timelineLoading}
-          >
-            <RefreshCw size={14} className={timelineLoading ? 'animate-spin inline-block' : 'inline-block'} />
-            <span className="ml-2">Refresh</span>
-          </button>
+          <div className="flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap overflow-visible">
+            <StatChip
+              label="Total"
+              value={timelineTotalAttacks}
+              help="Total attacks (anomalies) in the selected range."
+            />
+
+            <div className="relative" ref={timelineRangeRef}>
+              <button
+                type="button"
+                onClick={() => setTimelineRangeOpen((v) => !v)}
+                className="glass rounded-2xl border border-white/10 px-3 py-2 text-sm text-white hover:bg-white/10 transition"
+              >
+                Range
+              </button>
+
+              {timelineRangeOpen ? (
+                <div className="absolute right-0 top-full z-30 mt-2 w-80 rounded-2xl border border-white/10 bg-slate-950/90 p-3 shadow-xl backdrop-blur-xl">
+                  <div className="text-[11px] font-semibold text-slate-100">Range mode</div>
+                  <div className="mt-2 grid grid-cols-5 gap-2">
+                    {[
+                      { key: 'day', label: '24h' },
+                      { key: 'between', label: 'Between' },
+                      { key: 'month', label: 'Month' },
+                      { key: 'year', label: 'Year' },
+                      { key: 'account', label: 'Since' },
+                    ].map((m) => (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => setTimelineMode(m.key)}
+                        className={
+                          'rounded-xl border border-white/10 px-2 py-2 text-[11px] transition-colors ' +
+                          (timelineMode === m.key
+                            ? 'bg-white/10 text-slate-100'
+                            : 'bg-white/5 text-slate-300 hover:text-slate-100')
+                        }
+                      >
+                        {m.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {timelineMode === 'day' ? (
+                      <div className="col-span-2 text-xs text-slate-400">
+                        Shows a rolling window of the last 24 hours (hourly buckets).
+                      </div>
+                    ) : null}
+
+                    {timelineMode === 'between' ? (
+                      <>
+                        <label className="text-xs text-slate-300">
+                          From
+                          <input
+                            type="date"
+                            value={timelineFromDay}
+                            onChange={(e) => setTimelineFromDay(e.target.value)}
+                            className="mt-1 w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100"
+                          />
+                        </label>
+                        <label className="text-xs text-slate-300">
+                          To
+                          <input
+                            type="date"
+                            value={timelineToDay}
+                            onChange={(e) => setTimelineToDay(e.target.value)}
+                            className="mt-1 w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100"
+                          />
+                        </label>
+                      </>
+                    ) : null}
+
+                    {timelineMode === 'month' ? (
+                      <label className="col-span-2 text-xs text-slate-300">
+                        Month
+                        <input
+                          type="month"
+                          value={timelineMonth}
+                          onChange={(e) => setTimelineMonth(e.target.value)}
+                          className="mt-1 w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100"
+                        />
+                      </label>
+                    ) : null}
+
+                    {timelineMode === 'year' ? (
+                      <label className="col-span-2 text-xs text-slate-300">
+                        Year
+                        <input
+                          type="number"
+                          value={timelineYear}
+                          onChange={(e) => setTimelineYear(e.target.value)}
+                          min={1970}
+                          max={2100}
+                          className="mt-1 w-full rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-slate-100"
+                        />
+                      </label>
+                    ) : null}
+
+                    {timelineMode === 'account' ? (
+                      <div className="col-span-2 text-xs text-slate-400">
+                        Uses your earliest available packet timestamp.
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTimelineRangeOpen(false)}
+                      className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-slate-300 hover:text-slate-100"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setTimelineRangeOpen(false);
+                        loadTimeline();
+                      }}
+                      className="rounded-2xl border border-white/10 bg-white/10 px-3 py-2 text-xs text-slate-100 hover:bg-white/15"
+                    >
+                      Apply
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <button
+              onClick={loadTimeline}
+              className="glass rounded-2xl border border-white/10 px-3 py-2 text-sm text-white hover:bg-white/10 transition"
+              disabled={timelineLoading}
+            >
+              <RefreshCw size={14} className={timelineLoading ? 'animate-spin inline-block' : 'inline-block'} />
+              <span className="ml-2">Refresh</span>
+            </button>
+          </div>
         </div>
 
         {timelineError ? (
@@ -837,7 +1169,7 @@ export default function Forensics() {
           </div>
         </div>
 
-        <div className="h-56 min-w-0">
+        <div className="h-56 sm:h-64 lg:h-72 min-w-0">
           {!hasAnyNumericScores ? (
             <div className="h-full rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center px-4">
               <div className="text-center">
@@ -849,7 +1181,7 @@ export default function Forensics() {
               </div>
             </div>
           ) : (
-          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={224}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
             <ComposedChart
               data={scoreSeries}
               margin={{ top: 8, right: 12, bottom: 0, left: 12 }}
@@ -1413,7 +1745,7 @@ export default function Forensics() {
               </button>
             </div>
 
-            <div className="p-4 space-y-3 overflow-y-auto max-h-[75vh]">
+            <div className="p-4 space-y-3 overflow-y-auto scroll-hidden max-h-[75vh]">
               <div className="flex flex-wrap gap-2">
                 {selected?.ai_scored === false ? (
                   <span className="inline-flex items-center px-2 py-1 rounded text-xs font-bold border border-white/10 bg-white/5 text-slate-200">

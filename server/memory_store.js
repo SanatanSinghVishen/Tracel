@@ -23,6 +23,10 @@ class MemoryStore {
     this.byOwner = new Map();
   }
 
+  clearAll() {
+    this.byOwner.clear();
+  }
+
   _list(owner) {
     const key = owner || 'anon:unknown';
     let list = this.byOwner.get(key);
@@ -31,6 +35,11 @@ class MemoryStore {
       this.byOwner.set(key, list);
     }
     return list;
+  }
+
+  getAll(owner) {
+    // Returns a shallow copy (newest-first) so callers can safely iterate.
+    return this._list(owner).slice();
   }
 
   put(packet) {
