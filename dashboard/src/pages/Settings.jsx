@@ -69,7 +69,7 @@ export default function Settings() {
   }, [checkPersistence]);
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto space-y-6 animate-fade-in">
+    <div className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden space-y-6 animate-fade-in">
       {/* Header */}
       <div className="glass-card glow-hover p-5 sm:p-6">
         <div className="flex items-center gap-3">
@@ -145,9 +145,6 @@ export default function Settings() {
                   <option value="globe">Globe</option>
                 </select>
               </div>
-              <p className="mt-2 text-xs text-slate-400">
-                Stored locally in your browser (no backend write).
-              </p>
             </div>
           </div>
 

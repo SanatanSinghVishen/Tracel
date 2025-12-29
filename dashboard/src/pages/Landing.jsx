@@ -314,11 +314,9 @@ export default function Landing() {
               <ShieldAlert className="relative h-6 w-6 text-white" />
             </div>
             <div>
-              <div className="text-[11px] uppercase tracking-[0.28em] text-slate-400">TRACEL</div>
-              <div className="text-white font-semibold tracking-tight">Mission Control</div>
+              <div className="text-[20px] uppercase tracking-[0.28em] text-slate-400">TRACEL</div>
             </div>
           </div>
-
           <div className="hidden sm:flex items-center gap-2 text-xs text-slate-300">
           </div>
         </div>
@@ -411,14 +409,14 @@ export default function Landing() {
                   <div className="mt-1 text-xs text-slate-300">Flags unusual activity</div>
                 </div>
                 <div className="glass rounded-2xl border border-white/10 p-4 kpi-tile">
-                  <div className="text-[11px] uppercase tracking-wider text-slate-400">Context</div>
-                  <div className="mt-1 text-white font-semibold data-mono">Notes</div>
-                  <div className="mt-1 text-xs text-slate-300">Simple summaries</div>
+                  <div className="text-[11px] uppercase tracking-wider text-slate-400">Response</div>
+                  <div className="mt-1 text-white font-semibold data-mono">See who it was </div>
+                  <div className="mt-1 text-xs text-slate-300">See where it came from</div>
                 </div>
                 <div className="glass rounded-2xl border border-white/10 p-4 kpi-tile">
-                  <div className="text-[11px] uppercase tracking-wider text-slate-400">Response</div>
-                  <div className="mt-1 text-white font-semibold data-mono">Investigate</div>
-                  <div className="mt-1 text-xs text-slate-300">See where it came from</div>
+                  <div className="text-[11px] uppercase tracking-wider text-slate-400">Investigate</div>
+                  <div className="mt-1 text-white font-semibold data-mono">Tracer Chatbot</div>
+                  <div className="mt-1 text-xs text-slate-300">Summarises every detail</div>
                 </div>
               </div>
 
@@ -552,8 +550,7 @@ export default function Landing() {
           </div>
 
           <div className="mt-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-slate-400">
-            <div className="data-mono">TRACEL • Mission Control</div>
-            <div className="data-mono">Simple first • Details when needed</div>
+            <div className="data-mono">TRACEL</div>
           </div>
         </div>
       </div>

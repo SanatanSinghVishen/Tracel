@@ -1,13 +1,20 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import {
+  Area,
   Bar,
   BarChart,
+  CartesianGrid,
   Cell,
+  ComposedChart,
   Legend,
+  Line,
   Pie,
   PieChart,
+  ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
+  Scatter,
   Tooltip,
   XAxis,
   YAxis,
@@ -30,7 +37,133 @@ export default function Forensics() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [packets, setPackets] = useState([]);
+  // Separate, unfiltered score history used only for the AI chart.
+  // This keeps the chart stable even when the incident filters change.
+  const [scorePackets, setScorePackets] = useState([]);
   const [selected, setSelected] = useState(null);
+
+  const [scoreWindowSize, setScoreWindowSize] = useState(35);
+
+  const scoreSeries = useMemo(() => {
+    const rows = Array.isArray(scorePackets) ? scorePackets : [];
+    const slice = rows.slice(0, Math.max(10, Math.min(Number(scoreWindowSize) || 35, 200))).slice().reverse();
+    return slice.map((p, i) => {
+      const ts = new Date(p?.timestamp || Date.now());
+      const t = Number.isNaN(ts.getTime()) ? Date.now() : ts.getTime();
+      const label = Number.isNaN(ts.getTime()) ? String(i + 1) : ts.toLocaleTimeString();
+      const score = typeof p?.anomaly_score === 'number' ? p.anomaly_score : null;
+      const threshold = typeof p?.anomaly_threshold === 'number' ? p.anomaly_threshold : null;
+      const mean = typeof p?.anomaly_mean === 'number' ? p.anomaly_mean : null;
+      const warmedUp = typeof p?.anomaly_warmed_up === 'boolean' ? p.anomaly_warmed_up : null;
+      const baselineN = typeof p?.anomaly_baseline_n === 'number' ? p.anomaly_baseline_n : null;
+      const ai_scored = typeof p?.ai_scored === 'boolean' ? p.ai_scored : (typeof score === 'number');
+      return {
+        key: p?._id || `${p?.timestamp || 't'}-${i}`,
+        i,
+        t,
+        label,
+        score,
+        threshold,
+        mean,
+        warmedUp,
+        baselineN,
+        ai_scored,
+        is_anomaly: !!p?.is_anomaly,
+      };
+    });
+  }, [scorePackets, scoreWindowSize]);
+
+  const anomalyPoints = useMemo(() => scoreSeries.filter((p) => p.is_anomaly && typeof p.score === 'number'), [scoreSeries]);
+  const safePoints = useMemo(
+    () => scoreSeries.filter((p) => p.ai_scored && !p.is_anomaly && typeof p.score === 'number'),
+    [scoreSeries]
+  );
+
+  const latestScoreMeta = useMemo(() => {
+    const p = Array.isArray(scorePackets) ? scorePackets[0] : null;
+    const baselineN = typeof p?.anomaly_baseline_n === 'number' ? p.anomaly_baseline_n : null;
+    const warmedUp = typeof p?.anomaly_warmed_up === 'boolean' ? p.anomaly_warmed_up : null;
+    const mean = typeof p?.anomaly_mean === 'number' ? p.anomaly_mean : null;
+    const threshold = typeof p?.anomaly_threshold === 'number' ? p.anomaly_threshold : null;
+    return { baselineN, warmedUp, mean, threshold };
+  }, [scorePackets]);
+
+  const scoreWindowMeta = useMemo(() => {
+    const total = scoreSeries.length;
+    const threats = scoreSeries.reduce((acc, p) => acc + (p?.is_anomaly ? 1 : 0), 0);
+    return { total, threats };
+  }, [scoreSeries]);
+
+  const scoreYDomain = useMemo(() => {
+    const vals = [];
+    for (const p of scoreSeries) {
+      if (typeof p?.score === 'number') vals.push(p.score);
+      if (typeof p?.threshold === 'number') vals.push(p.threshold);
+      if (typeof p?.mean === 'number') vals.push(p.mean);
+    }
+    if (!vals.length) return [0, 1];
+    const min = Math.min(...vals);
+    const max = Math.max(...vals);
+    const span = Math.max(1e-6, max - min);
+    const pad = Math.max(0.02, span * 0.15);
+    return [min - pad, max + pad];
+  }, [scoreSeries]);
+
+  const renderScoreTooltip = useCallback(({ active, payload }) => {
+    if (!active || !Array.isArray(payload) || payload.length === 0) return null;
+    const p = payload[0]?.payload;
+    if (!p) return null;
+
+    const status = p.ai_scored === false
+      ? 'UNSCORED'
+      : (p.is_anomaly ? 'THREAT' : 'SAFE');
+
+    return (
+      <div
+        className="rounded-2xl border border-white/10 px-3 py-2"
+        style={{
+          backgroundColor: 'rgba(2, 6, 23, 0.9)',
+          backdropFilter: 'blur(12px)',
+        }}
+      >
+        <div className="text-xs text-slate-300">{p.label}</div>
+        <div className="mt-1 flex items-center gap-2">
+          <span className="text-xs text-slate-400">Status</span>
+          <span className={`text-xs font-semibold ${
+            status === 'THREAT' ? 'text-red-300' : (status === 'UNSCORED' ? 'text-slate-200' : 'text-emerald-300')
+          }`}>
+            {status}
+          </span>
+        </div>
+
+        <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+          <div className="text-slate-400">AI score</div>
+          <div className="text-slate-200 data-mono text-right">{typeof p.score === 'number' ? p.score.toFixed(4) : '—'}</div>
+
+          <div className="text-slate-400">Threshold</div>
+          <div className="text-slate-200 data-mono text-right">{typeof p.threshold === 'number' ? p.threshold.toFixed(4) : '—'}</div>
+
+          <div className="text-slate-400">Baseline mean</div>
+          <div className="text-slate-200 data-mono text-right">{typeof p.mean === 'number' ? p.mean.toFixed(4) : '—'}</div>
+
+          <div className="text-slate-400">Baseline N</div>
+          <div className="text-slate-200 data-mono text-right">{typeof p.baselineN === 'number' ? p.baselineN : '—'}</div>
+
+          <div className="text-slate-400">Warmup</div>
+          <div className="text-slate-200 text-right">{p.warmedUp == null ? '—' : (p.warmedUp ? 'ready' : 'learning')}</div>
+        </div>
+
+        <div className="mt-2 text-[11px] text-slate-400">
+          Interpretation: if score &lt; threshold → THREAT. (Lower score = more suspicious.)
+        </div>
+      </div>
+    );
+  }, []);
+
+  const hasAnyNumericScores = useMemo(
+    () => scoreSeries.some((p) => typeof p.score === 'number'),
+    [scoreSeries]
+  );
 
   const [showIncidentLog, setShowIncidentLog] = useState(false);
 
@@ -65,6 +198,51 @@ export default function Forensics() {
   const [ip, setIp] = useState('');
   const [anomalyOnly, setAnomalyOnly] = useState(false);
 
+  // AI chart dot visibility
+  const [scoreDotMode, setScoreDotMode] = useState('both'); // 'both' | 'threats'
+  const [scoreSettingsOpen, setScoreSettingsOpen] = useState(false);
+  const scoreSettingsRef = useRef(null);
+
+  useEffect(() => {
+    if (!scoreSettingsOpen) return;
+
+    function onMouseDown(e) {
+      const el = scoreSettingsRef.current;
+      if (!el) return;
+      if (el.contains(e.target)) return;
+      setScoreSettingsOpen(false);
+    }
+
+    function onKeyDown(e) {
+      if (e.key === 'Escape') setScoreSettingsOpen(false);
+    }
+
+    window.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('mousedown', onMouseDown);
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [scoreSettingsOpen]);
+
+  const StatChip = useCallback(({ label, value, help }) => {
+    return (
+      <div className="relative group">
+        <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-slate-200">
+          <span className="text-slate-400">{label}</span>
+          <span className="data-mono text-slate-100">{value}</span>
+        </div>
+
+        {help ? (
+          <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-72 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-white/10 bg-slate-950/90 px-3 py-2 text-xs text-slate-200 shadow-xl backdrop-blur-xl whitespace-normal break-words group-hover:block">
+            <div className="text-[11px] font-semibold text-slate-100">{label}</div>
+            <div className="mt-1 text-[11px] text-slate-300 leading-snug">{help}</div>
+          </div>
+        ) : null}
+      </div>
+    );
+  }, []);
+
   const packetMatchesIncidentFilters = useCallback(
     (p) => {
       if (!p) return false;
@@ -88,6 +266,14 @@ export default function Forensics() {
   }, [connection.serverUrl, anomalyOnly, ip]);
 
   const baseUrl = useMemo(() => (connection.serverUrl || 'http://localhost:3000'), [connection.serverUrl]);
+
+  const scoreApiUrl = useMemo(() => {
+    const u = new URL('/api/packets', baseUrl);
+    u.searchParams.set('limit', '200');
+    // Avoid cached history on refresh.
+    u.searchParams.set('_', String(Date.now()));
+    return u.toString();
+  }, [baseUrl]);
 
   const intelUrl = useMemo(() => {
     const u = new URL('/api/threat-intel', baseUrl);
@@ -220,6 +406,31 @@ export default function Forensics() {
       setLoading(false);
     }
   }, [apiUrl, isLoaded, getToken, anonId]);
+
+  // Load unfiltered history for the AI score chart.
+  useEffect(() => {
+    if (!isLoaded) return;
+    let cancelled = false;
+
+    async function loadScoreHistory() {
+      try {
+        const headers = await buildAuthHeaders(isLoaded ? getToken : null, anonId);
+        const res = await fetch(scoreApiUrl, { headers, credentials: 'include', cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) return;
+        if (cancelled) return;
+        const list = Array.isArray(data.packets) ? data.packets : [];
+        setScorePackets(list);
+      } catch {
+        // ignore
+      }
+    }
+
+    loadScoreHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [scoreApiUrl, isLoaded, getToken, anonId]);
 
   const loadTimeline = useCallback(async () => {
     if (!isLoaded) return;
@@ -365,6 +576,21 @@ export default function Forensics() {
     return () => socket.off('packet', onPacket);
   }, [socket, packetMatchesIncidentFilters]);
 
+  // Real-time score chart: always collect latest packets (unfiltered).
+  useEffect(() => {
+    function onScorePacket(p) {
+      setScorePackets((prev) => {
+        const id = p?._id || null;
+        const next = id ? prev.filter((x) => x?._id !== id) : prev;
+        // Keep newest-first (same convention as API) and cap memory.
+        return [p, ...next].slice(0, 300);
+      });
+    }
+
+    socket.on('packet', onScorePacket);
+    return () => socket.off('packet', onScorePacket);
+  }, [socket]);
+
   useEffect(() => {
     loadTimeline();
   }, [loadTimeline]);
@@ -380,7 +606,7 @@ export default function Forensics() {
   }, []);
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto space-y-6 animate-fade-in">
+    <div className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden space-y-6 animate-fade-in">
       <div className="glass-card glow-hover p-5 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -467,8 +693,8 @@ export default function Forensics() {
           </div>
         ) : null}
 
-        <div className="h-56">
-          <ResponsiveContainer width="100%" height="100%">
+        <div className="h-56 min-w-0">
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={224}>
             <BarChart data={timeline}>
               <XAxis dataKey="label" stroke="#444" fontSize={12} interval={2} />
               <YAxis stroke="#444" fontSize={12} allowDecimals={false} />
@@ -485,6 +711,269 @@ export default function Forensics() {
               <Bar dataKey="attacks" fill="#8b5cf6" />
             </BarChart>
           </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* AI score threshold */}
+      <div className="glass-card glow-hover p-5 sm:p-6">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <p className="text-xs text-slate-400 uppercase tracking-wider">AI Threshold</p>
+            <h2 className="text-sm font-semibold text-slate-200">AI score vs. dynamic threshold (live)</h2>
+          </div>
+          <div className="flex items-center justify-end gap-2 flex-nowrap whitespace-nowrap overflow-visible">
+            <div className="flex items-center gap-2 flex-nowrap">
+              <StatChip
+                label="Baseline"
+                value={latestScoreMeta.baselineN ?? '—'}
+                help="How many recent SAFE packets the server has learned from to estimate normal behavior (mean/std). Larger baseline = more stable threshold."
+              />
+              <StatChip
+                label="Warmup"
+                value={latestScoreMeta.warmedUp == null ? '—' : (latestScoreMeta.warmedUp ? 'ready' : 'learning')}
+                help="When warmup is ready, the server uses the rolling baseline threshold. If still learning, it may fall back to the AI model’s calibrated threshold."
+              />
+              <StatChip
+                label="Threshold"
+                value={typeof latestScoreMeta.threshold === 'number' ? latestScoreMeta.threshold.toFixed(4) : '—'}
+                help="Decision rule: if AI score < threshold → THREAT. The threshold is dynamic (mean − k·std) and updates as baseline learns."
+              />
+              <StatChip
+                label="Window"
+                value={`${scoreWindowMeta.total}/${Math.max(10, Math.min(Number(scoreWindowSize) || 35, 200))}`}
+                help="How many packets are currently displayed in this chart (sliding window). Old points drop out as new packets arrive."
+              />
+              <StatChip
+                label="Threats"
+                value={scoreWindowMeta.threats}
+                help="How many packets in the current window were flagged by server thresholding. Red dots show these packets."
+              />
+            </div>
+
+            <div className="mx-1 h-5 w-px bg-white/10 shrink-0" />
+
+            <div ref={scoreSettingsRef} className="relative shrink-0">
+              <button
+                type="button"
+                onClick={() => setScoreSettingsOpen((v) => !v)}
+                aria-haspopup="menu"
+                aria-expanded={scoreSettingsOpen ? 'true' : 'false'}
+                className={
+                  'inline-flex items-center gap-2 rounded-2xl border border-white/10 bg-white/5 px-3 py-1 text-[11px] transition-colors ' +
+                  (scoreSettingsOpen ? 'text-slate-100' : 'text-slate-200 hover:text-slate-100')
+                }
+              >
+                <span className="text-slate-400">Settings</span>
+                <span className="text-slate-300">▾</span>
+              </button>
+
+              {scoreSettingsOpen ? (
+                <div
+                  role="menu"
+                  className="absolute right-0 top-full z-30 mt-2 w-72 rounded-2xl border border-white/10 bg-slate-950/90 p-3 shadow-xl backdrop-blur-xl"
+                >
+                  <div className="text-[11px] font-semibold text-slate-100">Dots</div>
+                  <div className="mt-2 inline-flex w-full items-center rounded-2xl border border-white/10 bg-white/5 p-1 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScoreDotMode('threats');
+                        setScoreSettingsOpen(false);
+                      }}
+                      className={
+                        'flex-1 px-3 py-1 rounded-xl transition-colors ' +
+                        (scoreDotMode === 'threats'
+                          ? 'bg-white/10 text-slate-100'
+                          : 'text-slate-300 hover:text-slate-100')
+                      }
+                    >
+                      Threats only
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScoreDotMode('both');
+                        setScoreSettingsOpen(false);
+                      }}
+                      className={
+                        'flex-1 px-3 py-1 rounded-xl transition-colors ' +
+                        (scoreDotMode === 'both'
+                          ? 'bg-white/10 text-slate-100'
+                          : 'text-slate-300 hover:text-slate-100')
+                      }
+                    >
+                      Threats + Safe
+                    </button>
+                  </div>
+
+                  <div className="mt-3 text-[11px] font-semibold text-slate-100">Window size</div>
+                  <div className="mt-2 grid grid-cols-4 gap-2">
+                    {[20, 30, 35, 50].map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        onClick={() => {
+                          setScoreWindowSize(n);
+                          setScoreSettingsOpen(false);
+                        }}
+                        className={
+                          'rounded-xl border border-white/10 px-2 py-2 text-[11px] transition-colors ' +
+                          (Number(scoreWindowSize) === n
+                            ? 'bg-white/10 text-slate-100'
+                            : 'bg-white/5 text-slate-300 hover:text-slate-100')
+                        }
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="mt-3 text-[11px] text-slate-400">
+                    Window controls how many recent packets are shown.
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="h-56 min-w-0">
+          {!hasAnyNumericScores ? (
+            <div className="h-full rounded-2xl border border-white/10 bg-white/5 flex items-center justify-center px-4">
+              <div className="text-center">
+                <div className="text-sm text-slate-200 font-semibold">No AI scores yet</div>
+                <div className="mt-1 text-xs text-slate-400">
+                  This chart appears empty when the AI engine is offline or hasn’t produced scores.
+                  Start the Python AI at <span className="data-mono text-slate-200">http://127.0.0.1:5000</span> and wait a few seconds.
+                </div>
+              </div>
+            </div>
+          ) : (
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={224}>
+            <ComposedChart
+              data={scoreSeries}
+              margin={{ top: 8, right: 12, bottom: 0, left: 12 }}
+            >
+              <defs>
+                <linearGradient id="scoreFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid stroke="rgba(255,255,255,0.08)" strokeDasharray="4 4" />
+              <XAxis
+                dataKey="t"
+                type="number"
+                domain={['dataMin', 'dataMax']}
+                stroke="#444"
+                fontSize={12}
+                interval="preserveStartEnd"
+                minTickGap={28}
+                padding={{ left: 12, right: 12 }}
+                tickFormatter={(v) => {
+                  const n = Number(v);
+                  if (!Number.isFinite(n)) return '';
+                  const d = new Date(n);
+                  if (Number.isNaN(d.getTime())) return '';
+                  return d.toLocaleTimeString();
+                }}
+              />
+              <YAxis
+                stroke="#444"
+                fontSize={12}
+                domain={scoreYDomain}
+                padding={{ top: 10, bottom: 10 }}
+                tickFormatter={(v) => (Number.isFinite(Number(v)) ? Number(v).toFixed(2) : '')}
+              />
+              <Tooltip
+                cursor={{ stroke: 'rgba(255,255,255,0.15)' }}
+                content={renderScoreTooltip}
+              />
+
+              <Legend
+                wrapperStyle={{ color: '#e2e8f0' }}
+                formatter={(value) => {
+                  if (value === 'score') return 'AI score (lower = suspicious)';
+                  if (value === 'threshold') return 'Dynamic threshold';
+                  if (value === 'mean') return 'Baseline mean';
+                  if (value === 'anomalies') return 'Flagged threats';
+                  if (value === 'safe') return 'Safe packets';
+                  return value;
+                }}
+              />
+
+              {typeof latestScoreMeta.threshold === 'number' ? (
+                <ReferenceArea
+                  y1={scoreYDomain[0]}
+                  y2={latestScoreMeta.threshold}
+                  fill="rgba(239, 68, 68, 0.08)"
+                  strokeOpacity={0}
+                  ifOverflow="extendDomain"
+                />
+              ) : null}
+
+              <Line
+                type="monotone"
+                dataKey="threshold"
+                name="threshold"
+                stroke="#8b5cf6"
+                strokeWidth={2}
+                strokeDasharray="10 6"
+                dot={false}
+                connectNulls={false}
+                isAnimationActive
+                animationDuration={250}
+              />
+
+              <Line
+                type="monotone"
+                dataKey="mean"
+                name="mean"
+                stroke="rgba(59, 130, 246, 0.55)"
+                strokeWidth={1.5}
+                strokeDasharray="6 4"
+                dot={false}
+                connectNulls={false}
+                isAnimationActive
+                animationDuration={250}
+              />
+
+              <Area
+                type="monotone"
+                dataKey="score"
+                name="score"
+                stroke="#3b82f6"
+                strokeWidth={2}
+                fill="url(#scoreFill)"
+                dot={false}
+                connectNulls={false}
+                isAnimationActive
+                animationDuration={250}
+              />
+
+              <Scatter
+                data={anomalyPoints}
+                name="anomalies"
+                dataKey="score"
+                fill="#ef4444"
+                isAnimationActive
+                animationDuration={250}
+              />
+
+              {scoreDotMode === 'both' ? (
+                <Scatter
+                  data={safePoints}
+                  name="safe"
+                  dataKey="score"
+                  fill="#22c55e"
+                  fillOpacity={0.55}
+                  isAnimationActive
+                  animationDuration={250}
+                />
+              ) : null}
+            </ComposedChart>
+          </ResponsiveContainer>
+          )}
         </div>
       </div>
 
@@ -648,11 +1137,11 @@ export default function Forensics() {
                 <div className="mt-1 text-sm text-slate-300">Distribution across vectors (one-line definitions below).</div>
               </div>
 
-              <div className="mt-4 h-56">
+              <div className="mt-4 h-56 min-w-0">
                 {intelLoading ? (
                   <div className="h-full rounded-2xl bg-white/5 border border-white/10 skeleton" />
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={224}>
                     <PieChart>
                       <Tooltip
                         contentStyle={{
@@ -750,11 +1239,11 @@ export default function Forensics() {
                 <div className="mt-1 text-sm text-slate-300">Lower scores tend to be more suspicious.</div>
               </div>
 
-              <div className="mt-4 h-56">
+              <div className="mt-4 h-56 min-w-0">
                 {intelLoading ? (
                   <div className="h-full rounded-2xl bg-white/5 border border-white/10 skeleton" />
                 ) : (
-                  <ResponsiveContainer width="100%" height="100%">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={224}>
                     <BarChart data={intelReport.confidence}>
                       <XAxis dataKey="bucket" stroke="#444" fontSize={12} />
                       <YAxis stroke="#444" fontSize={12} allowDecimals={false} />
@@ -872,15 +1361,21 @@ export default function Forensics() {
                         <td className="py-3 pr-4 text-slate-200">{p.method}</td>
                         <td className="py-3 pr-4 text-slate-200">{typeof p.bytes === 'number' ? `${p.bytes} B` : '—'}</td>
                         <td className="py-3 pr-4">
-                          <span
-                            className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold border ${
-                              p.is_anomaly
-                                ? 'text-red-300 border-red-500/20 bg-red-500/10'
-                                : 'text-emerald-300 border-emerald-500/20 bg-emerald-500/10'
-                            }`}
-                          >
-                            {p.is_anomaly ? 'THREAT' : 'SAFE'}
-                          </span>
+                          {p?.ai_scored === false ? (
+                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-bold border border-white/10 bg-white/5 text-slate-200">
+                              UNSCORED
+                            </span>
+                          ) : (
+                            <span
+                              className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold border ${
+                                p.is_anomaly
+                                  ? 'text-red-300 border-red-500/20 bg-red-500/10'
+                                  : 'text-emerald-300 border-emerald-500/20 bg-emerald-500/10'
+                              }`}
+                            >
+                              {p.is_anomaly ? 'THREAT' : 'SAFE'}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 pr-0 text-slate-200 data-mono">{typeof p.anomaly_score === 'number' ? p.anomaly_score.toFixed(3) : '—'}</td>
                       </tr>
@@ -920,13 +1415,19 @@ export default function Forensics() {
 
             <div className="p-4 space-y-3 overflow-y-auto max-h-[75vh]">
               <div className="flex flex-wrap gap-2">
-                <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold border ${
-                  selected.is_anomaly
-                    ? 'text-red-300 border-red-500/20 bg-red-500/10'
-                    : 'text-emerald-300 border-emerald-500/20 bg-emerald-500/10'
-                }`}>
-                  {selected.is_anomaly ? 'THREAT' : 'SAFE'}
-                </span>
+                {selected?.ai_scored === false ? (
+                  <span className="inline-flex items-center px-2 py-1 rounded text-xs font-bold border border-white/10 bg-white/5 text-slate-200">
+                    UNSCORED
+                  </span>
+                ) : (
+                  <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold border ${
+                    selected.is_anomaly
+                      ? 'text-red-300 border-red-500/20 bg-red-500/10'
+                      : 'text-emerald-300 border-emerald-500/20 bg-emerald-500/10'
+                  }`}>
+                    {selected.is_anomaly ? 'THREAT' : 'SAFE'}
+                  </span>
+                )}
                 <span className="inline-flex items-center px-2 py-1 rounded text-xs font-bold border border-white/10 bg-gradient-to-r from-tracel-accent-blue/20 to-tracel-accent-purple/20 text-slate-100">
                   AI score: {typeof selected.anomaly_score === 'number' ? selected.anomaly_score : '—'}
                 </span>

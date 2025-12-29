@@ -1,22 +1,20 @@
 import {
   Activity,
   ArrowRight,
+  BarChart3,
   Brain,
   Globe,
   Github,
-  Info,
   Linkedin,
   Mail,
   MessageCircle,
   Package,
-  BarChart3,
   Route,
   Server,
   ShieldAlert,
   Twitter,
   Webhook,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
 import {
   SiExpress,
   SiFlask,
@@ -31,294 +29,79 @@ import {
   SiThreedotjs,
   SiVite,
 } from 'react-icons/si';
-
-function FlowNode({ title, subtitle, icon, tone, selected, onSelect }) {
+function SectionHeader({ kicker, title, subtitle, icon }) {
   return (
-    <button
-      type="button"
-      onClick={onSelect}
-      aria-pressed={selected}
-      className={
-        "group nav-tile w-full h-full min-h-[92px] text-left glass rounded-2xl border border-white/10 p-4 transition hover-lift hover:bg-white/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-tracel-accent-blue/60 " +
-        (selected ? "bg-white/10 ring-1 ring-tracel-accent-blue/35" : "")
-      }
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div
-            className={
-              "h-10 w-10 rounded-xl border border-white/10 flex items-center justify-center " +
-              (tone || "bg-white/5")
-            }
-          >
-            {icon}
-          </div>
-          <div>
-            <div className="text-sm font-bold text-white leading-tight">{title}</div>
-            <div className="text-xs text-slate-400">{subtitle}</div>
-          </div>
-        </div>
-
-        <div className="hidden sm:flex flex-col items-end gap-1">
-          <span
-            className={
-              "inline-flex items-center gap-2 text-[10px] uppercase tracking-wider " +
-              (selected ? "text-slate-300" : "text-gray-500")
-            }
-          >
-            <span
-              className={
-                "h-1.5 w-1.5 rounded-full " +
-                (selected
-                  ? "bg-tracel-accent-blue/60"
-                  : "bg-white/20 group-hover:bg-tracel-accent-blue/40")
-              }
-            />
-            <span className="sr-only">{selected ? "Focused" : "Select"}</span>
-          </span>
-        </div>
+    <div className="flex items-start justify-between gap-4">
+      <div>
+        {kicker ? (
+          <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400">{kicker}</div>
+        ) : null}
+        <div className="mt-1 text-lg font-bold text-white tracking-tight">{title}</div>
+        {subtitle ? <div className="mt-1 text-xs text-slate-400">{subtitle}</div> : null}
       </div>
-    </button>
+      {icon ? (
+        <div className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 grid place-items-center shrink-0">
+          {icon}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
-function FlowConnector({ active }) {
+function Pill({ children }) {
   return (
-    <div className="hidden md:flex items-center justify-center px-1">
-      <div className="flex items-center gap-2">
-        <span
-          className={
-            "h-px w-8 rounded-full " +
-            (active
-              ? "bg-gradient-to-r from-tracel-accent-blue/50 to-tracel-accent-purple/40"
-              : "bg-white/10")
-          }
-        />
-        <ArrowRight
-          className={
-            "w-4 h-4 " +
-            (active ? "text-tracel-accent-blue/70" : "text-gray-600")
-          }
-        />
+    <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-slate-200">
+      {children}
+    </span>
+  );
+}
+
+function FeatureCard({ icon, title, body }) {
+  return (
+    <div className="glass rounded-2xl border border-white/10 p-4 hover-lift transition">
+      <div className="flex items-start gap-3">
+        <div className="h-10 w-10 rounded-2xl border border-white/10 bg-black/20 grid place-items-center shrink-0">
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-white">{title}</div>
+          <div className="mt-1 text-xs text-slate-400 leading-relaxed">{body}</div>
+        </div>
       </div>
     </div>
   );
 }
 
-function DataFlow() {
-  const nodes = useMemo(
-    () =>
-      [
-        {
-          id: 'simulator',
-          title: 'Simulator',
-          subtitle: 'Creates sample traffic',
-          icon: <Activity className="w-5 h-5 text-emerald-300" />,
-          tone: 'bg-emerald-400/10',
-          summary: 'Makes a steady stream of normal activity, and can also create sudden “attack-like” bursts for testing.',
-          inputs: ['Traffic settings', 'Attack mode on/off'],
-          outputs: ['Live activity events', 'Attack bursts for demos'],
-        },
-        {
-          id: 'traffic',
-          title: 'Traffic Server',
-          subtitle: 'Live traffic hub',
-          icon: <Webhook className="w-5 h-5 text-slate-200" />,
-          tone: 'bg-tracel-accent-blue/10',
-          summary:
-            'Collects the live activity, adds useful info (like risk), and sends it to your dashboard instantly.',
-          inputs: ['Live activity from the simulator', 'Optional “risk score” from AI', 'Who is viewing (signed-in user or guest)'],
-          outputs: ['Live stream for the dashboard', 'History/search data (when storage is on)', 'Threat snapshot (last 24 hours)'],
-        },
-        {
-          id: 'dashboard',
-          title: 'Dashboard',
-          subtitle: 'What you see in the app',
-          icon: <Globe className="w-5 h-5 text-tracel-accent-blue" />,
-          tone: 'bg-white/5',
-          summary:
-            'Shows live charts, alerts, and locations. You can also review past activity and get quick help from the assistant.',
-          inputs: ['Live activity updates', 'Saved history (optional)', 'Threat snapshot'],
-          outputs: ['Live monitoring screens', 'Investigation tools', 'Assistant answers'],
-        },
-        {
-          id: 'ai',
-          title: 'AI Scoring',
-          subtitle: 'Smart risk detection',
-          icon: <Brain className="w-5 h-5 text-amber-300" />,
-          tone: 'bg-amber-400/10',
-          summary:
-            'Looks at patterns in the activity and flags unusual behavior so you can spot possible threats faster.',
-          inputs: ['Activity details'],
-          outputs: ['Risk score', 'Unusual/normal decision'],
-        },
-        {
-          id: 'chat',
-          title: 'Chat Assistant',
-          subtitle: 'Ask questions anytime',
-          icon: <MessageCircle className="w-5 h-5 text-tracel-accent-purple" />,
-          tone: 'bg-tracel-accent-purple/10',
-          summary:
-            'Lets you ask simple questions about what you’re seeing and get quick guidance during investigations.',
-          inputs: ['Your question', 'Recent activity context (when available)'],
-          outputs: ['Helpful answers', 'Suggested next steps'],
-        },
-      ],
-    []
-  );
-
-  const [activeId, setActiveId] = useState('traffic');
-  const active = nodes.find((n) => n.id === activeId) || nodes[1];
-
-  const isMainPath = (id) => id === 'simulator' || id === 'traffic' || id === 'dashboard';
-  const connectorActive = (leftId, rightId) => {
-    if (!isMainPath(leftId) || !isMainPath(rightId)) return false;
-    if (activeId === leftId || activeId === rightId) return true;
-    if (activeId === 'traffic') return true;
-    return false;
-  };
-
+function StepCard({ step, title, subtitle, icon, bullets }) {
   return (
-    <div className="mt-4 glass rounded-2xl border border-white/10 p-4 sm:p-5">
+    <div className="glass rounded-2xl border border-white/10 p-4 min-w-0">
       <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="text-xs text-slate-400 uppercase tracking-wider">Data flow</div>
-          <div className="mt-1 text-sm text-slate-200">
-            Click a node to inspect inputs, outputs, and behavior.
+        <div className="min-w-0">
+          <div className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.22em] text-slate-400">
+            <span className="h-5 w-5 rounded-full border border-white/10 bg-white/5 grid place-items-center text-[10px] text-slate-200">
+              {step}
+            </span>
+            <span>Step</span>
           </div>
+          <div className="mt-2 text-sm font-semibold text-white">{title}</div>
+          {subtitle ? <div className="mt-1 text-xs text-slate-400">{subtitle}</div> : null}
         </div>
 
-        <div className="hidden sm:flex items-center gap-3 text-[10px] text-gray-500">
-          <span className="inline-flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-tracel-accent-blue/50" />
-            Streaming
-          </span>
-          <span className="inline-flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400/40" />
-            Processing
-          </span>
-          <span className="inline-flex items-center gap-2">
-            <span className="h-1.5 w-1.5 rounded-full bg-tracel-accent-purple/40" />
-            Storage
-          </span>
+        <div className="h-10 w-10 rounded-2xl border border-white/10 bg-white/5 grid place-items-center shrink-0">
+          {icon}
         </div>
       </div>
 
-      <div className="mt-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Diagram */}
-        <div className="lg:col-span-7 lg:h-[360px] lg:flex lg:flex-col">
-          {/* Main path */}
-          <div className="flex flex-col md:flex-row md:items-stretch gap-3 lg:flex-none">
-            <div className="md:basis-[28%] md:flex-none">
-              <FlowNode
-                {...nodes[0]}
-                selected={activeId === 'simulator'}
-                onSelect={() => setActiveId('simulator')}
-              />
+      {Array.isArray(bullets) && bullets.length ? (
+        <div className="mt-3 grid gap-2">
+          {bullets.map((b) => (
+            <div key={b} className="flex items-start gap-2 text-xs text-slate-300 leading-relaxed">
+              <span className="mt-1 h-1.5 w-1.5 rounded-full bg-white/20 shrink-0" />
+              <span className="min-w-0">{b}</span>
             </div>
-            <FlowConnector active={connectorActive('simulator', 'traffic')} />
-            <div className="flex-1">
-              <FlowNode
-                {...nodes[1]}
-                selected={activeId === 'traffic'}
-                onSelect={() => setActiveId('traffic')}
-              />
-            </div>
-            <FlowConnector active={connectorActive('traffic', 'dashboard')} />
-            <div className="flex-1">
-              <FlowNode
-                {...nodes[2]}
-                selected={activeId === 'dashboard'}
-                onSelect={() => setActiveId('dashboard')}
-              />
-            </div>
-          </div>
-
-          {/* Side channels */}
-          <div className="mt-4 glass rounded-2xl border border-white/10 p-4 lg:mt-4 lg:flex-1 lg:min-h-0 lg:overflow-hidden flex flex-col">
-            <div className="flex items-center justify-between gap-3 flex-none">
-              <div className="text-xs text-slate-400 uppercase tracking-wider">Side channels</div>
-              <div className="text-[10px] text-gray-500">Attached to the server during processing</div>
-            </div>
-
-            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-1 lg:grid-rows-2 gap-3 flex-1 min-h-0">
-              <FlowNode
-                title={nodes[3].title}
-                subtitle={nodes[3].subtitle}
-                icon={nodes[3].icon}
-                tone={nodes[3].tone}
-                selected={activeId === 'ai'}
-                onSelect={() => setActiveId('ai')}
-              />
-              <FlowNode
-                title={nodes[4].title}
-                subtitle={nodes[4].subtitle}
-                icon={nodes[4].icon}
-                tone={nodes[4].tone}
-                selected={activeId === 'chat'}
-                onSelect={() => setActiveId('chat')}
-              />
-            </div>
-          </div>
+          ))}
         </div>
-
-        {/* Details panel */}
-        <div className="lg:col-span-5">
-          <div className="glass rounded-2xl border border-white/10 p-4 h-[320px] sm:h-[340px] lg:h-[360px] overflow-hidden">
-            <div className="h-full flex flex-col">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-bold text-white">{active.title}</div>
-                  <div className="text-xs text-slate-400">{active.subtitle}</div>
-                </div>
-                <div className="hidden sm:flex items-center gap-2">
-                  <div className="h-9 w-9 rounded-xl border border-white/10 bg-black/40 flex items-center justify-center">
-                    {active.icon}
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3 flex-1 overflow-y-auto pr-1">
-                <p className="text-sm text-slate-200 leading-relaxed">{active.summary}</p>
-
-                <div className="mt-4 grid grid-cols-1 gap-3">
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                    <div className="text-[10px] uppercase tracking-wider text-slate-400">Inputs</div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {active.inputs.map((it) => (
-                        <span
-                          key={it}
-                          className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-200"
-                        >
-                          {it}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="rounded-xl border border-white/10 bg-black/20 p-3">
-                    <div className="text-[10px] uppercase tracking-wider text-slate-400">Outputs</div>
-                    <div className="mt-2 flex flex-wrap gap-2">
-                      {active.outputs.map((it) => (
-                        <span
-                          key={it}
-                          className="inline-flex items-center rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[11px] text-slate-200"
-                        >
-                          {it}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div className="mt-3 text-xs text-gray-500">
-                Tip: Use <span className="text-slate-300">Tab</span> to focus nodes and <span className="text-slate-300">Enter</span> to select.
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
+      ) : null}
     </div>
   );
 }
@@ -336,206 +119,317 @@ export default function About() {
     },
   };
 
+  const hasAnyLink =
+    !!creator.links.website ||
+    !!creator.links.github ||
+    !!creator.links.linkedin ||
+    !!creator.links.x ||
+    !!creator.links.email;
+
   return (
-    <div className="h-full min-h-0 overflow-y-auto space-y-6 animate-fade-in">
-      {/* Header */}
-      <div className="glass-card glow-hover p-5 sm:p-6">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 rounded-xl border border-white/10 bg-gradient-to-br from-tracel-accent-blue/20 to-tracel-accent-purple/20 flex items-center justify-center">
-              <Info className="w-5 h-5 text-slate-100" />
+    <div className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden animate-fade-in">
+      <div className="space-y-4 sm:space-y-6">
+        {/* Hero */}
+        <div className="glass-card glow-hover p-6 sm:p-7 relative pb-16 sm:pb-18">
+          <div className="flex flex-col lg:flex-row lg:items-start gap-6">
+            <div className="flex-1 min-w-0">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-slate-200">
+                <span className="h-1.5 w-1.5 rounded-full bg-tracel-accent-blue/60" />
+                <span>About Tracel</span>
+              </div>
+
+              <h1 className="mt-4 text-3xl sm:text-4xl font-semibold text-white tracking-tight">
+                Real‑time monitoring, with easy explanations.
+              </h1>
+
+              <p className="mt-3 text-sm text-slate-300 leading-relaxed max-w-2xl">
+                Tracel is a real-time network security platform that transforms raw traffic into actionable intelligence.
+                Using an advanced Isolation Forest AI engine, it instantly scrutinizes every data packet to distinguish between routine operations and critical threats like DDoS attacks.
+                The immersive dashboard visualizes this activity through live rolling charts and an interactive 3D globe, offering immediate situational awareness without the need for static logs.
+                Equipped with deep forensic tools, a realistic attack simulator, and a context-aware AI assistant, Tracel provides complete command over your network’s security posture from a single, modern interface.
+              </p>
             </div>
-            <div>
-              <h2 className="text-2xl font-semibold text-white tracking-tight">About</h2>
-              <p className="mt-1 text-xs text-slate-400">A simple overview of what Tracel does.</p>
+
+            {/* Snapshot */}
+            <div className="lg:w-[420px] w-full">
+              <div className="glass rounded-2xl border border-white/10 p-4 sm:p-5">
+                <SectionHeader
+                  kicker="Snapshot"
+                  title="What happens to each packet"
+                  subtitle="From activity → score → decision → what you see"
+                  icon={<ShieldAlert className="w-5 h-5 text-slate-200" />}
+                />
+
+                <div className="mt-4 grid gap-3">
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="flex items-center gap-2 text-xs text-slate-300 font-semibold">
+                      <Brain className="w-4 h-4 text-amber-300" />
+                      AI Engine
+                    </div>
+                    <div className="mt-1 text-xs text-slate-400 leading-relaxed">
+                      Looks at the packet details (like size, type, ports, and patterns) and returns a single
+                      score. A lower score means it looks more suspicious.
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
+                    <div className="flex items-center gap-2 text-xs text-slate-300 font-semibold">
+                      <Server className="w-4 h-4 text-slate-200" />
+                      Traffic Server
+                    </div>
+                    <div className="mt-1 text-xs text-slate-400 leading-relaxed">
+                      Collects live activity, asks the AI for a score, and learns what “normal” looks like while
+                      you run the app. Then it decides SAFE or THREAT and streams the result to your dashboard.
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
-          {(creator.links.website ||
-            creator.links.github ||
-            creator.links.linkedin ||
-            creator.links.x ||
-            creator.links.email) ? (
-            <div className="hidden sm:flex items-center gap-3">
-              <div className="hidden md:block text-right">
-                <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Connect</div>
-                <div className="text-xs text-slate-200">
-                  {creator.name ? creator.name : 'Creator'}
+          {hasAnyLink ? (
+            <div className="absolute left-6 bottom-5 sm:left-7 sm:bottom-6">
+              <div className="flex items-center gap-3">
+                <div className="hidden sm:block min-w-0">
+                  <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Connect</div>
+                  <div className="text-xs text-slate-200 max-w-[340px] truncate">
+                    <span className="inline-flex items-center rounded-full border border-white/10 bg-white/5 px-2 py-0.5 font-semibold text-slate-100">
+                      {creator.name ? creator.name : 'Creator'}
+                    </span>
+                    {creator.tagline ? <span className="text-slate-400"> — {creator.tagline}</span> : null}
+                  </div>
                 </div>
-              </div>
 
-              <div className="flex items-center gap-2">
-                {creator.links.website ? (
-                  <a
-                    href={creator.links.website}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="Website"
-                    title="Website"
-                    className="nav-tile h-10 w-10 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition grid place-items-center"
-                  >
-                    <Globe className="w-5 h-5 text-slate-100" />
-                  </a>
-                ) : null}
-
-                {creator.links.github ? (
-                  <a
-                    href={creator.links.github}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="GitHub"
-                    title="GitHub"
-                    className="nav-tile h-10 w-10 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition grid place-items-center"
-                  >
-                    <Github className="w-5 h-5 text-slate-100" />
-                  </a>
-                ) : null}
-
-                {creator.links.linkedin ? (
-                  <a
-                    href={creator.links.linkedin}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="LinkedIn"
-                    title="LinkedIn"
-                    className="nav-tile h-10 w-10 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition grid place-items-center"
-                  >
-                    <Linkedin className="w-5 h-5 text-slate-100" />
-                  </a>
-                ) : null}
-
-                {creator.links.x ? (
-                  <a
-                    href={creator.links.x}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="X (Twitter)"
-                    title="X (Twitter)"
-                    className="nav-tile h-10 w-10 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition grid place-items-center"
-                  >
-                    <Twitter className="w-5 h-5 text-slate-100" />
-                  </a>
-                ) : null}
-
-                {creator.links.email ? (
-                  <a
-                    href={`mailto:${creator.links.email}`}
-                    aria-label="Email"
-                    title="Email"
-                    className="nav-tile h-10 w-10 rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition grid place-items-center"
-                  >
-                    <Mail className="w-5 h-5 text-slate-100" />
-                  </a>
-                ) : null}
+                <div className="flex items-center gap-2">
+                  {creator.links.website ? (
+                    <a
+                      href={creator.links.website}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Website"
+                      title="Website"
+                      className="nav-tile h-10 w-10 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition grid place-items-center"
+                    >
+                      <Globe className="w-5 h-5 text-slate-100" />
+                    </a>
+                  ) : null}
+                  {creator.links.github ? (
+                    <a
+                      href={creator.links.github}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="GitHub"
+                      title="GitHub"
+                      className="nav-tile h-10 w-10 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition grid place-items-center"
+                    >
+                      <Github className="w-5 h-5 text-slate-100" />
+                    </a>
+                  ) : null}
+                  {creator.links.linkedin ? (
+                    <a
+                      href={creator.links.linkedin}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="LinkedIn"
+                      title="LinkedIn"
+                      className="nav-tile h-10 w-10 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition grid place-items-center"
+                    >
+                      <Linkedin className="w-5 h-5 text-slate-100" />
+                    </a>
+                  ) : null}
+                  {creator.links.x ? (
+                    <a
+                      href={creator.links.x}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="X (Twitter)"
+                      title="X (Twitter)"
+                      className="nav-tile h-10 w-10 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition grid place-items-center"
+                    >
+                      <Twitter className="w-5 h-5 text-slate-100" />
+                    </a>
+                  ) : null}
+                  {creator.links.email ? (
+                    <a
+                      href={`mailto:${creator.links.email}`}
+                      aria-label="Email"
+                      title="Email"
+                      className="nav-tile h-10 w-10 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition grid place-items-center"
+                    >
+                      <Mail className="w-5 h-5 text-slate-100" />
+                    </a>
+                  ) : null}
+                </div>
               </div>
             </div>
           ) : null}
         </div>
-      </div>
 
-      <div className="glass-card glow-hover p-6 sm:p-7 hover-lift interactive animate-fade-up">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-bold text-white">Tracel — Real‑Time Threat Monitoring</h3>
-            <p className="mt-2 text-sm text-slate-300 leading-relaxed">
-              Tracel is a real-time monitoring app that helps you see what’s happening on a network and spot
-              suspicious activity early. It shows live activity, highlights unusual behavior, and gives you tools
-              to review and understand incidents.
-              <span className="text-slate-300"> It works for both signed-in users and guests, includes a “last 24 hours” threat snapshot, and has a built-in assistant to help you investigate faster.</span>
-            </p>
-          </div>
-          <div className="hidden md:flex items-center gap-2">
-            <div className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 flex items-center justify-center">
-              <ShieldAlert className="w-5 h-5 text-slate-200" />
+        {/* Architecture strip */}
+        <div className="glass-card glow-hover p-6 sm:p-7 hover-lift interactive animate-fade-up">
+          <SectionHeader
+            kicker="Architecture"
+            title="Simple flow: score, then decision"
+            subtitle="AI scores it. The server decides. You can understand what happened."
+            icon={<Webhook className="w-5 h-5 text-slate-200" />}
+          />
+
+          <div className="mt-5 grid grid-cols-1 md:grid-cols-12 gap-3">
+            <div className="md:col-span-3">
+              <StepCard
+                step={1}
+                title="Traffic"
+                subtitle="Live activity (or demo traffic)"
+                icon={<Activity className="w-5 h-5 text-emerald-300" />}
+                bullets={[
+                  "Sends activity in real time",
+                  "Can simulate attack-like spikes for demos",
+                ]}
+              />
             </div>
-            <div className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 flex items-center justify-center">
-              <Webhook className="w-5 h-5 text-slate-200" />
+
+            <div className="hidden md:flex md:col-span-1 items-center justify-center">
+              <ArrowRight className="w-5 h-5 text-white/25" />
             </div>
-            <div className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 flex items-center justify-center">
-              <Brain className="w-5 h-5 text-gray-200" />
+
+            <div className="md:col-span-3">
+              <StepCard
+                step={2}
+                title="AI score"
+                subtitle="A quick suspiciousness score"
+                icon={<Brain className="w-5 h-5 text-amber-300" />}
+                bullets={["Returns one score per packet", "Lower score = more suspicious"]}
+              />
+            </div>
+
+            <div className="hidden md:flex md:col-span-1 items-center justify-center">
+              <ArrowRight className="w-5 h-5 text-white/25" />
+            </div>
+
+            <div className="md:col-span-4">
+              <StepCard
+                step={3}
+                title="Final decision"
+                subtitle="Learns what’s normal for you"
+                icon={<Server className="w-5 h-5 text-slate-200" />}
+                bullets={[
+                  "Learns what “normal” looks like while you run it",
+                  "Marks THREAT when the score looks clearly unusual",
+                ]}
+              />
             </div>
           </div>
         </div>
 
-        {/* Data flow */}
-        <DataFlow />
-      </div>
+        {/* Experience */}
+        <div className="glass-card glow-hover p-6 sm:p-7 hover-lift interactive animate-fade-up">
+          <SectionHeader
+            kicker="Experience"
+            title="What you get in the dashboard"
+            subtitle="A clean look — without hiding what matters."
+            icon={<Globe className="w-5 h-5 text-tracel-accent-blue" />}
+          />
 
-      {/* Tech stack (brand icons) */}
-      <div className="glass-card glow-hover p-6 sm:p-7 hover-lift interactive animate-fade-up">
-        <div className="flex items-end justify-between gap-4">
-          <div>
-            <h3 className="text-lg font-bold text-white">Tech stack</h3>
-            <p className="mt-1 text-xs text-slate-400">Core libraries and services used in this project.</p>
+          <div className="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+            <FeatureCard
+              icon={<BarChart3 className="w-5 h-5 text-emerald-300" />}
+              title="Forensics AI Score tile"
+              body="A live score chart that shows safe vs threat clearly. It keeps a small recent window so it stays fast and readable."
+            />
+            <FeatureCard
+              icon={<ShieldAlert className="w-5 h-5 text-slate-200" />}
+              title="Threat labeling"
+              body="Shows SAFE or THREAT in a consistent way, even when you switch between normal monitoring and attack simulation."
+            />
+            <FeatureCard
+              icon={<Webhook className="w-5 h-5 text-slate-200" />}
+              title="Real-time streaming"
+              body="Everything updates live (charts, maps, and alerts), so you don’t need to refresh." 
+            />
+            <FeatureCard
+              icon={<MessageCircle className="w-5 h-5 text-tracel-accent-purple" />}
+              title="Chat Assistant"
+              body="Ask questions in plain language and get quick guidance while you investigate." 
+            />
           </div>
         </div>
 
-        <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="glass rounded-2xl border border-white/10 p-4">
-            <div className="text-xs text-slate-400 uppercase tracking-wider">Frontend</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <SiReact className="w-4 h-4 text-tracel-accent-blue" /> React
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <SiVite className="w-4 h-4 text-tracel-accent-purple" /> Vite
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <SiTailwindcss className="w-4 h-4 text-tracel-accent-blue" /> Tailwind
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <Route className="w-4 h-4 text-slate-100" /> Router
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <SiSocketdotio className="w-4 h-4 text-tracel-accent-purple" /> Socket.IO
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <BarChart3 className="w-4 h-4 text-emerald-300" /> Recharts
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <SiThreedotjs className="w-4 h-4 text-tracel-accent-purple" /> three.js
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <Globe className="w-4 h-4 text-tracel-accent-blue" /> Globe
+        {/* Tech stack */}
+        <div className="glass-card glow-hover p-6 sm:p-7 hover-lift interactive animate-fade-up">
+          <SectionHeader
+            kicker="Stack"
+            title="Built with familiar tools"
+            subtitle="Simple building blocks so it stays reliable." 
+            icon={<Package className="w-5 h-5 text-slate-200" />}
+          />
+
+          <div className="mt-5 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="glass rounded-2xl border border-white/10 p-4">
+              <div className="text-xs text-slate-400 uppercase tracking-wider">Frontend</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <SiReact className="w-4 h-4 text-tracel-accent-blue" /> React
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <SiVite className="w-4 h-4 text-tracel-accent-purple" /> Vite
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <SiTailwindcss className="w-4 h-4 text-tracel-accent-blue" /> Tailwind
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <Route className="w-4 h-4 text-slate-100" /> Router
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <SiSocketdotio className="w-4 h-4 text-tracel-accent-purple" /> Socket.IO
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <BarChart3 className="w-4 h-4 text-emerald-300" /> Recharts
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <SiThreedotjs className="w-4 h-4 text-tracel-accent-purple" /> three.js
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <Globe className="w-4 h-4 text-tracel-accent-blue" /> Globe
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="glass rounded-2xl border border-white/10 p-4">
-            <div className="text-xs text-slate-400 uppercase tracking-wider">Backend</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <SiNodedotjs className="w-4 h-4 text-emerald-300" /> Node.js
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <SiExpress className="w-4 h-4 text-slate-100" /> Express
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <SiSocketdotio className="w-4 h-4 text-tracel-accent-purple" /> Socket.IO
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <SiMongodb className="w-4 h-4 text-emerald-300" /> MongoDB
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <SiMongoose className="w-4 h-4 text-tracel-accent-purple" /> Mongoose
+            <div className="glass rounded-2xl border border-white/10 p-4">
+              <div className="text-xs text-slate-400 uppercase tracking-wider">Backend</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <SiNodedotjs className="w-4 h-4 text-emerald-300" /> Node.js
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <SiExpress className="w-4 h-4 text-slate-100" /> Express
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <SiSocketdotio className="w-4 h-4 text-tracel-accent-purple" /> Socket.IO
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <SiMongodb className="w-4 h-4 text-emerald-300" /> MongoDB
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <SiMongoose className="w-4 h-4 text-tracel-accent-purple" /> Mongoose
+                </div>
               </div>
             </div>
-          </div>
 
-          <div className="glass rounded-2xl border border-white/10 p-4">
-            <div className="text-xs text-slate-400 uppercase tracking-wider">AI</div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <SiPython className="w-4 h-4 text-amber-300" /> Python
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <SiFlask className="w-4 h-4 text-slate-100" /> Flask
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <SiScikitlearn className="w-4 h-4 text-amber-300" /> scikit-learn
-              </div>
-              <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                <Package className="w-4 h-4 text-amber-300" /> joblib
+            <div className="glass rounded-2xl border border-white/10 p-4">
+              <div className="text-xs text-slate-400 uppercase tracking-wider">AI</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <SiPython className="w-4 h-4 text-amber-300" /> Python
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <SiFlask className="w-4 h-4 text-slate-100" /> Flask
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <SiScikitlearn className="w-4 h-4 text-amber-300" /> scikit-learn
+                </div>
+                <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
+                  <Package className="w-4 h-4 text-amber-300" /> joblib
+                </div>
               </div>
             </div>
           </div>

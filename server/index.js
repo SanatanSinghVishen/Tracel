@@ -46,6 +46,83 @@ const { MemoryStore } = require('./memory_store');
 
 const { createTrafficStream } = require('./traffic_simulator');
 
+function getAiPredictUrl() {
+    return String(process.env.AI_PREDICT_URL || 'http://127.0.0.1:5000/predict').trim();
+}
+
+function getAiHealthUrl() {
+    const raw = String(process.env.AI_HEALTH_URL || '').trim();
+    if (raw) return raw;
+
+    const predict = getAiPredictUrl();
+    // Common pattern: /predict -> /health?load=1
+    if (/\/predict\/?$/i.test(predict)) {
+        return predict.replace(/\/predict\/?$/i, '/health?load=1');
+    }
+    // Fallback: just try /health?load=1 off the same origin.
+    try {
+        const u = new URL(predict);
+        u.pathname = '/health';
+        u.search = 'load=1';
+        return u.toString();
+    } catch {
+        return 'http://127.0.0.1:5000/health?load=1';
+    }
+}
+
+const aiStatus = {
+    ok: false,
+    modelLoaded: null,
+    threshold: null,
+    lastCheckedAt: null,
+    lastOkAt: null,
+    lastError: null,
+};
+
+let lastAiStatusBroadcastOk = null;
+
+async function pollAiHealthOnce() {
+    const nowIso = new Date().toISOString();
+    aiStatus.lastCheckedAt = nowIso;
+    try {
+        const res = await axios.get(getAiHealthUrl(), { timeout: 1500 });
+        const ok = !!res?.data?.ok;
+        const modelLoaded = typeof res?.data?.modelLoaded === 'boolean' ? res.data.modelLoaded : null;
+        const thrRaw = res?.data?.threshold;
+        const threshold = Number(thrRaw);
+
+        aiStatus.ok = ok;
+        aiStatus.modelLoaded = modelLoaded;
+        aiStatus.threshold = Number.isFinite(threshold) ? threshold : null;
+        aiStatus.lastError = null;
+        if (ok) aiStatus.lastOkAt = nowIso;
+    } catch (e) {
+        aiStatus.ok = false;
+        aiStatus.modelLoaded = null;
+        aiStatus.threshold = null;
+        aiStatus.lastError = {
+            message: e?.message,
+            code: e?.code,
+            status: e?.response?.status,
+        };
+    }
+
+    // Broadcast only when ok-state flips.
+    if (lastAiStatusBroadcastOk === null || lastAiStatusBroadcastOk !== aiStatus.ok) {
+        lastAiStatusBroadcastOk = aiStatus.ok;
+        try {
+            io.emit('ai_status', { ...aiStatus });
+        } catch {
+            // best-effort
+        }
+    }
+}
+
+setInterval(() => {
+    pollAiHealthOnce().catch(() => void 0);
+}, Math.max(2000, Math.min(parseInt(process.env.AI_HEALTH_POLL_MS || '5000', 10) || 5000, 60_000)));
+pollAiHealthOnce().catch(() => void 0);
+
 const memoryStore = new MemoryStore({
     maxPerOwner: Math.max(100, Math.min(parseInt(process.env.MEMORY_MAX_PACKETS || '5000', 10), 50_000))
 });
@@ -60,6 +137,84 @@ const STREAM_IDLE_TTL_MS = Math.max(5_000, Math.min(parseInt(process.env.STREAM_
 const OWNER_ROOM_PREFIX = 'owner:';
 const streamsByOwner = new Map();
 const ownerEmailByOwner = new Map();
+
+class DynamicThresholdManager {
+    constructor({ baselineSize = 1000, warmup = 20, k = 2, minStdDev = 1e-6 } = {}) {
+        this.baselineSize = baselineSize;
+        this.warmup = warmup;
+        this.k = k;
+        this.minStdDev = minStdDev;
+
+        this._scores = [];
+        this._sum = 0;
+        this._sumSq = 0;
+
+        this.mean = null;
+        this.stdDev = null;
+        this.threshold = null;
+    }
+
+    _recompute() {
+        const n = this._scores.length;
+        if (n <= 0) {
+            this.mean = null;
+            this.stdDev = null;
+            this.threshold = null;
+            return;
+        }
+
+        const mean = this._sum / n;
+        const variance = Math.max(0, (this._sumSq / n) - (mean * mean));
+        const stdDev = Math.max(Math.sqrt(variance), this.minStdDev);
+
+        this.mean = mean;
+        this.stdDev = stdDev;
+        this.threshold = mean - (this.k * stdDev);
+    }
+
+    learn(score) {
+        const s = Number(score);
+        if (!Number.isFinite(s)) return;
+
+        this._scores.push(s);
+        this._sum += s;
+        this._sumSq += s * s;
+
+        while (this._scores.length > this.baselineSize) {
+            const old = this._scores.shift();
+            this._sum -= old;
+            this._sumSq -= old * old;
+        }
+
+        this._recompute();
+    }
+
+    get baselineN() {
+        return this._scores.length;
+    }
+
+    get warmedUp() {
+        return this.baselineN >= this.warmup && this.threshold !== null && Number.isFinite(this.threshold);
+    }
+
+    isAnomaly(score) {
+        const s = Number(score);
+        if (!Number.isFinite(s)) return false;
+        if (!this.warmedUp) return false;
+        return s < this.threshold;
+    }
+
+    snapshot() {
+        return {
+            baselineN: this.baselineN,
+            warmedUp: this.warmedUp,
+            mean: this.mean,
+            stdDev: this.stdDev,
+            threshold: this.threshold,
+            k: this.k,
+        };
+    }
+}
 
 function getOwnerRoom(ownerUserId) {
     return `${OWNER_ROOM_PREFIX}${ownerUserId}`;
@@ -88,14 +243,73 @@ function startOrGetOwnerStream(ownerUserId) {
             threats: 0,
             startedAt: new Date(),
         },
+        thresholdMgr: new DynamicThresholdManager({
+            baselineSize: (() => {
+                const raw = String(process.env.DYNAMIC_THRESHOLD_BASELINE_SIZE || '1000').trim();
+                const parsed = parseInt(raw, 10);
+                if (!Number.isFinite(parsed)) return 1000;
+                return Math.max(50, Math.min(parsed, 50_000));
+            })(),
+            warmup: (() => {
+                const raw = String(process.env.DYNAMIC_THRESHOLD_WARMUP || '20').trim();
+                const parsed = parseInt(raw, 10);
+                if (!Number.isFinite(parsed)) return 20;
+                return Math.max(5, Math.min(parsed, 5000));
+            })(),
+            k: (() => {
+                const raw = String(process.env.DYNAMIC_THRESHOLD_K || '2').trim();
+                const parsed = parseFloat(raw);
+                if (!Number.isFinite(parsed)) return 2;
+                return Math.max(0.5, Math.min(parsed, 5));
+            })(),
+            minStdDev: 1e-6,
+        }),
     };
 
     entry.stream = createTrafficStream({
         owner: ownerUserId,
         emitPacket: (packetData) => {
+            const isAttackMode = !!entry.stream?.isAttackMode;
+            const score = packetData?.anomaly_score;
+            const aiScored = Number.isFinite(Number(score));
+            packetData.ai_scored = aiScored;
+
+            // Learning phase:
+            // - Primary: learn on normal traffic only.
+            // - Bootstrap: if the user enables Attack mode immediately (no warmup yet),
+            //   allow the baseline to learn from packets that are clearly safe per the
+            //   AI engine's calibrated threshold.
+            if (!isAttackMode) {
+                entry.thresholdMgr.learn(score);
+            } else if (aiScored && !entry.thresholdMgr.warmedUp && Number.isFinite(Number(aiStatus.threshold))) {
+                const s = Number(score);
+                const safeFloor = Number(aiStatus.threshold);
+                if (Number.isFinite(s) && s >= safeFloor) {
+                    entry.thresholdMgr.learn(s);
+                }
+            }
+
+            // Detection phase: always active.
+            // Primary: dynamic threshold once warmed up.
+            // Fallback (pre-warmup): use AI engine's calibrated threshold if available.
+            let dynamicIsAnomaly = entry.thresholdMgr.isAnomaly(score);
+            const t = entry.thresholdMgr.snapshot();
+
+            if (!dynamicIsAnomaly && aiScored && !t.warmedUp && Number.isFinite(Number(aiStatus.threshold))) {
+                dynamicIsAnomaly = Number(score) < Number(aiStatus.threshold);
+            }
+
+            // Overwrite any simulator-provided label (AI now returns score only).
+            packetData.is_anomaly = !!dynamicIsAnomaly;
+            packetData.anomaly_threshold = t.threshold ?? aiStatus.threshold;
+            packetData.anomaly_mean = t.mean;
+            packetData.anomaly_stddev = t.stdDev;
+            packetData.anomaly_baseline_n = t.baselineN;
+            packetData.anomaly_warmed_up = t.warmedUp;
+
             // Maintain a per-owner session total so UI remains consistent across refresh.
             entry.counters.packets += 1;
-            if (packetData?.is_anomaly) entry.counters.threats += 1;
+            if (packetData.is_anomaly) entry.counters.threats += 1;
 
             const packetWithSession = {
                 ...packetData,
@@ -896,6 +1110,9 @@ io.on('connection', (socket) => {
     const ownerRoom = getOwnerRoom(auth.ownerUserId);
     socket.join(ownerRoom);
 
+    // Let the client know if the AI engine is currently reachable.
+    socket.emit('ai_status', { ...aiStatus });
+
     // Ensure a per-owner stream exists and attach this socket.
     const entry = startOrGetOwnerStream(auth.ownerUserId);
     entry.sockets.add(socket.id);
@@ -973,4 +1190,10 @@ io.engine.on('initial_headers', (headers, req) => {
 
 io.engine.on('headers', (headers, req) => {
     ensureSocketHandshakeCookie(headers, req);
+});
+
+// AI engine status (reachability + model loaded)
+app.get('/api/ai/status', (req, res) => {
+    res.set('Cache-Control', 'no-store');
+    return res.json({ ok: true, ai: aiStatus, urls: { predict: getAiPredictUrl(), health: getAiHealthUrl() } });
 });

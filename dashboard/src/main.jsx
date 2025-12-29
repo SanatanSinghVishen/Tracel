@@ -9,6 +9,11 @@ if (!clerkPubKey) {
   throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY. Add it to dashboard/.env (see .env.example).');
 }
 
+// Optional override: some networks block *.clerk.accounts.dev in the browser.
+// If set, Clerk will load its JS bundle from this URL instead.
+// Example: https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js
+const clerkJsUrl = (import.meta.env.VITE_CLERK_JS_URL || '').trim() || undefined;
+
 const clerkAppearance = {
   variables: {
     colorPrimary: '#3b82f6',
@@ -58,7 +63,14 @@ const clerkAppearance = {
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <ClerkProvider publishableKey={clerkPubKey} afterSignOutUrl="/" appearance={clerkAppearance}>
+    <ClerkProvider
+      publishableKey={clerkPubKey}
+      clerkJSUrl={clerkJsUrl}
+      // Give slow/busy networks a bit more time to fetch the script.
+      scriptLoadTimeout={30000}
+      afterSignOutUrl="/"
+      appearance={clerkAppearance}
+    >
       <App />
     </ClerkProvider>
   </StrictMode>,

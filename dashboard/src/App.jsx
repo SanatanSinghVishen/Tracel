@@ -53,13 +53,13 @@ function AuthShell({ children }) {
 function AppShell() {
   return (
     <SocketProvider>
-      <div className="min-h-screen font-sans">
-        <Sidebar />
-
-        {/* Main content is padded to avoid the fixed sidebar */}
-        <main className="h-screen overflow-hidden pl-[104px] md:pl-[312px] pr-4 md:pr-6 pt-4 pb-4">
-          <Outlet />
-        </main>
+      <div className="h-screen min-h-screen font-sans overflow-hidden">
+        <div className="h-full min-w-0 flex gap-4 p-4">
+          <Sidebar />
+          <main className="flex-1 min-w-0 overflow-hidden">
+            <Outlet />
+          </main>
+        </div>
       </div>
     </SocketProvider>
   );

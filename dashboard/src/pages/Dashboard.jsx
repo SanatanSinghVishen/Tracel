@@ -19,13 +19,13 @@ export default function Dashboard() {
   const { isLoaded, getToken } = useAuth();
   const { socket, connection } = useSocket();
   const anonId = useMemo(() => getOrCreateAnonId(), []);
-  const uptimeKey = useMemo(() => `tracel_uptime_start:${anonId}`, [anonId]);
   const [trafficView, setTrafficView] = useState(() => readDefaultTrafficView());
   const [trafficData, setTrafficData] = useState([]);
   const [stats, setStats] = useState({ packets: 0, threats: 0, uptime: 0 });
   const [currentPacket, setCurrentPacket] = useState(null);
   const [logs, setLogs] = useState([]);
   const [attackSimEnabled, setAttackSimEnabled] = useState(false);
+  const [uptimeStartMs, setUptimeStartMs] = useState(0);
 
   // Load recent history so UI doesn't reset on refresh/navigation.
   useEffect(() => {
@@ -68,6 +68,12 @@ export default function Dashboard() {
         const sessionPackets = typeof data?.session?.packets === 'number' ? data.session.packets : null;
         const intelThreats24h = typeof intelData?.totalThreats === 'number' ? intelData.totalThreats : null;
 
+        const sessionStartedAt = typeof data?.session?.startedAt === 'string' ? data.session.startedAt : null;
+        if (sessionStartedAt) {
+          const parsed = Date.parse(sessionStartedAt);
+          if (Number.isFinite(parsed) && parsed > 0) setUptimeStartMs(parsed);
+        }
+
         const threatsFromPackets = packets.reduce((acc, p) => acc + (p?.is_anomaly ? 1 : 0), 0);
         setStats((s) => ({
           ...s,
@@ -99,36 +105,35 @@ export default function Dashboard() {
     writeDefaultTrafficView(trafficView);
   }, [trafficView]);
 
-  // Uptime should not reset on refresh/page navigation.
-  // Store a stable "start" timestamp per browser identity.
+  // Uptime should reset when the server restarts.
+  // We derive uptime from the server session start timestamp.
   useEffect(() => {
-    let startMs = 0;
-    try {
-      const raw = window.localStorage.getItem(uptimeKey);
-      const parsed = raw ? Number.parseInt(raw, 10) : NaN;
-      if (Number.isFinite(parsed) && parsed > 0) startMs = parsed;
-      if (!startMs) {
-        startMs = Date.now();
-        window.localStorage.setItem(uptimeKey, String(startMs));
-      }
-    } catch {
-      // If storage is blocked, fall back to in-memory uptime.
-      startMs = Date.now();
+    if (!uptimeStartMs) {
+      setStats((s) => (s.uptime === 0 ? s : { ...s, uptime: 0 }));
+      return undefined;
     }
 
     const tick = () => {
-      const seconds = Math.max(0, Math.floor((Date.now() - startMs) / 1000));
+      const seconds = Math.max(0, Math.floor((Date.now() - uptimeStartMs) / 1000));
       setStats((s) => (s.uptime === seconds ? s : { ...s, uptime: seconds }));
     };
 
     tick();
     const timer = setInterval(tick, 1000);
     return () => clearInterval(timer);
-  }, [uptimeKey]);
+  }, [uptimeStartMs]);
 
   useEffect(() => {
     function onPacket(data) {
       setCurrentPacket(data);
+
+      if (typeof data?.session_started_at === 'string') {
+        const parsed = Date.parse(data.session_started_at);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          setUptimeStartMs((prev) => (prev !== parsed ? parsed : prev));
+        }
+      }
+
       setStats((prev) => {
         const nextPackets = typeof data?.session_total_packets === 'number' ? data.session_total_packets : prev.packets + 1;
         // Keep the threat KPI aligned to 24h intel. On live packets, increment on anomalies.
@@ -166,7 +171,7 @@ export default function Dashboard() {
   const attackActive = !!currentPacket?.is_anomaly;
 
   return (
-    <div className="h-full min-h-0 overflow-hidden flex flex-col gap-4 animate-fade-in">
+    <div className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden flex flex-col gap-4 animate-fade-in">
       <ChatAssistant />
       {/* Header */}
       <div className="glass-card glow-hover p-5 sm:p-6 shrink-0">
@@ -280,7 +285,6 @@ export default function Dashboard() {
           <p className="mt-2 text-3xl font-semibold text-white data-mono tabular-nums whitespace-nowrap leading-none">
             {stats.threats.toLocaleString()}
           </p>
-          <p className="mt-2 text-xs text-slate-400">Matches Forensics threat intel</p>
         </div>
 
         <div className="glass-card glow-hover p-5 hover-lift">
@@ -317,7 +321,7 @@ export default function Dashboard() {
       </div>
 
       {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-0 h-full">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 flex-1 min-h-[560px] min-w-0">
         {/* Traffic */}
         <div className="glass-card glow-hover lg:col-span-2 p-5 sm:p-6 flex flex-col min-h-0 h-full animate-fade-up">
           <div className="flex items-center justify-between mb-4">
@@ -371,8 +375,8 @@ export default function Dashboard() {
                 <div className="h-3 w-3/4 skeleton" />
               </div>
             ) : (
-              <div className="h-full min-h-[224px]">
-                <ResponsiveContainer width="100%" height="100%">
+              <div className="h-full min-h-[224px] min-w-0">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={224}>
                   <AreaChart data={trafficData}>
                     <defs>
                       <linearGradient id="bytesFillSafe" x1="0" y1="0" x2="0" y2="1">
