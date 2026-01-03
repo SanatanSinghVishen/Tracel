@@ -588,8 +588,11 @@ def report_threat_intel():
         return jsonify({"ok": False, "error": str(e)}), 500
 
 if __name__ == '__main__':
-    host = "127.0.0.1"
-    port = 5000
+    host = os.getenv('HOST', '0.0.0.0')
+    try:
+        port = int(os.getenv('PORT', '5000'))
+    except Exception:
+        port = 5000
     print(f"AI Service running on http://{host}:{port}")
     # Preload model so the first /predict doesn't pay load cost.
     ensure_model_loaded()

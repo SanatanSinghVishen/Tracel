@@ -79,7 +79,21 @@ function isAiDisabled() {
 }
 
 function getAiPredictUrl() {
-    return String(process.env.AI_PREDICT_URL || 'http://127.0.0.1:5000/predict').trim();
+    const explicit = String(process.env.AI_PREDICT_URL || '').trim();
+    if (explicit) return explicit;
+
+    const base = String(process.env.AI_ENGINE_URL || '').trim();
+    if (base) {
+        // Support either providing the origin (https://svc) or a full /predict URL.
+        if (/\/predict\/?$/i.test(base)) return base;
+        try {
+            return new URL('/predict', base).toString();
+        } catch {
+            // Fall through to localhost default.
+        }
+    }
+
+    return 'http://127.0.0.1:5000/predict';
 }
 
 function getAiHealthUrl() {
