@@ -15,6 +15,20 @@ from dotenv import load_dotenv
 app = Flask(__name__)
 
 
+@app.route('/', methods=['GET'])
+def root():
+    return jsonify(
+        {
+            'ok': True,
+            'service': 'ai-engine',
+            'endpoints': {
+                'health': '/health',
+                'predict': '/predict',
+            },
+        }
+    ), 200
+
+
 @app.before_request
 def _start_timer():
     g._t0 = time.perf_counter()
