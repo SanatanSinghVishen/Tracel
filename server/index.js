@@ -73,6 +73,11 @@ const { MemoryStore } = require('./memory_store');
 
 const { createTrafficStream } = require('./traffic_simulator');
 
+function isAiDisabled() {
+    const raw = String(process.env.AI_DISABLED || process.env.DISABLE_AI || '').trim().toLowerCase();
+    return raw === '1' || raw === 'true' || raw === 'yes';
+}
+
 function getAiPredictUrl() {
     return String(process.env.AI_PREDICT_URL || 'http://127.0.0.1:5000/predict').trim();
 }
@@ -111,6 +116,24 @@ let lastAiStatusBroadcastOk = null;
 async function pollAiHealthOnce() {
     const nowIso = new Date().toISOString();
     aiStatus.lastCheckedAt = nowIso;
+
+    if (isAiDisabled()) {
+        aiStatus.ok = false;
+        aiStatus.modelLoaded = null;
+        aiStatus.threshold = null;
+        aiStatus.lastError = { message: 'AI disabled by configuration', code: 'AI_DISABLED' };
+        // Broadcast only when ok-state flips.
+        if (lastAiStatusBroadcastOk === null || lastAiStatusBroadcastOk !== aiStatus.ok) {
+            lastAiStatusBroadcastOk = aiStatus.ok;
+            try {
+                io.emit('ai_status', { ...aiStatus });
+            } catch {
+                // best-effort
+            }
+        }
+        return;
+    }
+
     try {
         const res = await axios.get(getAiHealthUrl(), { timeout: 1500 });
         const ok = !!res?.data?.ok;
@@ -1401,7 +1424,7 @@ const PORT = (() => {
     const parsed = parseInt(String(raw), 10);
     return Number.isFinite(parsed) ? parsed : 3000;
 })();
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
     log.info(`Server running on port ${PORT}`);
 });
 
@@ -1409,6 +1432,10 @@ server.listen(PORT, () => {
 // GET /api/threat-intel?sinceHours=24&limit=10000
 app.get('/api/threat-intel', async (req, res) => {
     try {
+        if (isAiDisabled()) {
+            return res.status(503).json({ ok: false, error: 'AI is disabled by configuration' });
+        }
+
         res.set('Cache-Control', 'no-store');
         res.set('Pragma', 'no-cache');
         res.set('Expires', '0');

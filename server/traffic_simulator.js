@@ -65,6 +65,11 @@ function getAiPredictUrl() {
     return process.env.AI_PREDICT_URL || 'http://127.0.0.1:5000/predict';
 }
 
+function isAiDisabled() {
+    const raw = String(process.env.AI_DISABLED || process.env.DISABLE_AI || '').trim().toLowerCase();
+    return raw === '1' || raw === 'true' || raw === 'yes';
+}
+
 const aiHttpAgent = new http.Agent({ keepAlive: true, maxSockets: 50 });
 const aiHttpsAgent = new https.Agent({ keepAlive: true, maxSockets: 50 });
 const aiClient = axios.create({
@@ -258,44 +263,49 @@ function createTrafficStream({ owner, emitPacket, persistPacket } = {}) {
         const packetData = getPacketData(isAttackMode, { owner });
 
         // --- STEP 1: ASK AI FOR VERDICT ---
-        try {
-            const aiId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-            const response = await aiClient.post(
-                getAiPredictUrl(),
-                {
-                    id: aiId,
-                    bytes: packetData.bytes,
-                    method: packetData.method,
-                    // Advanced features for updated AI model (Step 2).
-                    protocol: packetData.protocol,
-                    entropy: packetData.entropy,
-                    dst_port: packetData.dst_port,
-                },
-                undefined
-            );
+        if (!isAiDisabled()) {
+            try {
+                const aiId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+                const response = await aiClient.post(
+                    getAiPredictUrl(),
+                    {
+                        id: aiId,
+                        bytes: packetData.bytes,
+                        method: packetData.method,
+                        // Advanced features for updated AI model (Step 2).
+                        protocol: packetData.protocol,
+                        entropy: packetData.entropy,
+                        dst_port: packetData.dst_port,
+                    },
+                    undefined
+                );
 
-            // Raw score only (lower => more anomalous). Node will threshold it dynamically.
-            // Back-compat: some older AI versions returned { anomaly_score, is_anomaly }.
-            const rawScore = response?.data?.score ?? response?.data?.anomaly_score ?? response?.data?.anomalyScore;
-            const scoreNum = Number(rawScore);
-            packetData.anomaly_score = Number.isFinite(scoreNum) ? scoreNum : null;
-            packetData.ai_id = response?.data?.id || response?.data?.ai_id || aiId;
-            packetData.is_anomaly = false;
-        } catch (error) {
+                // Raw score only (lower => more anomalous). Node will threshold it dynamically.
+                // Back-compat: some older AI versions returned { anomaly_score, is_anomaly }.
+                const rawScore = response?.data?.score ?? response?.data?.anomaly_score ?? response?.data?.anomalyScore;
+                const scoreNum = Number(rawScore);
+                packetData.anomaly_score = Number.isFinite(scoreNum) ? scoreNum : null;
+                packetData.ai_id = response?.data?.id || response?.data?.ai_id || aiId;
+                packetData.is_anomaly = false;
+            } catch (error) {
+                packetData.is_anomaly = false;
+                packetData.anomaly_score = null;
+
+                const status = error?.response?.status;
+                const detail = error?.response?.data;
+                const code = error?.code;
+                const msg = error?.message;
+                warnAiOncePerInterval('[SIMULATOR] AI score unavailable (using null score)', {
+                    url: getAiPredictUrl(),
+                    code,
+                    status,
+                    message: msg,
+                    detail,
+                });
+            }
+        } else {
             packetData.is_anomaly = false;
             packetData.anomaly_score = null;
-
-            const status = error?.response?.status;
-            const detail = error?.response?.data;
-            const code = error?.code;
-            const msg = error?.message;
-            warnAiOncePerInterval('[SIMULATOR] AI score unavailable (using null score)', {
-                url: getAiPredictUrl(),
-                code,
-                status,
-                message: msg,
-                detail,
-            });
         }
 
         // --- STEP 2: EMIT & SAVE ---

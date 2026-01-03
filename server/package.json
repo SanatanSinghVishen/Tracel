@@ -2,6 +2,9 @@
   "name": "server",
   "version": "1.0.0",
   "main": "index.js",
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js"
@@ -19,9 +22,11 @@
     "jsonwebtoken": "^9.0.2",
     "jwks-rsa": "^3.2.0",
     "mongoose": "^9.0.2",
-    "nodemon": "^3.1.11",
     "socket.io": "^4.8.3",
     "tracel": "file:.."
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
   },
   "overrides": {
     "@types/node": "25.0.3"
