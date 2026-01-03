@@ -26,6 +26,7 @@
 
 # ML artifacts
 **/*.pkl
+!ai-engine/model.pkl
 
 # OS/editor
 .DS_Store
