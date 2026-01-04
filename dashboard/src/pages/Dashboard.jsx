@@ -195,7 +195,7 @@ export default function Dashboard() {
                 <span className="ml-3 text-slate-400 font-normal">/ Tracel</span>
               </h1>
 
-              <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-slate-200">
+              <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-[11px] text-slate-200">
                 <span className={connection.connected ? 'pulse-dot' : 'pulse-dot pulse-dot--off'} />
                 <span className={connection.connected ? 'text-slate-200' : 'text-red-200'}>
                   {connection.connected ? 'Online' : 'Offline'}
@@ -203,7 +203,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="sm:hidden mt-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] text-slate-200">
+            <div className="sm:hidden mt-3 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-[11px] text-slate-200">
               <span className={connection.connected ? 'pulse-dot' : 'pulse-dot pulse-dot--off'} />
               <span className="text-slate-400">Connection</span>
               <span className={connection.connected ? 'text-slate-200' : 'text-red-200'}>
@@ -221,17 +221,17 @@ export default function Dashboard() {
             <div className="w-full sm:w-auto">
               <div className="flex items-center justify-between sm:justify-start gap-3">
                 <div
-                  className="relative w-full sm:w-[320px] rounded-2xl border border-white/10 bg-white/5 p-1"
+                  className="relative w-full sm:w-[320px] rounded-lg border border-zinc-800 bg-zinc-900 p-1"
                   role="group"
                   aria-label="Attack simulation toggle"
                 >
                   <div
                     className={
-                      `absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] rounded-xl border border-white/10 ` +
+                      `absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] rounded-md border border-zinc-800 ` +
                       `transition-transform duration-200 ease-out ` +
                       (attackSimEnabled
-                        ? 'translate-x-full bg-gradient-to-r from-red-500/25 to-red-400/15'
-                        : 'translate-x-0 bg-gradient-to-r from-tracel-accent-blue/25 to-tracel-accent-purple/25')
+                        ? 'translate-x-full bg-red-500/15'
+                        : 'translate-x-0 bg-zinc-950/70')
                     }
                     aria-hidden="true"
                   />
@@ -246,7 +246,7 @@ export default function Dashboard() {
                         toggleAttack(false);
                       }}
                       className={
-                        `flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold ` +
+                        `flex items-center justify-center gap-2 px-4 py-2 rounded-md text-xs font-semibold ` +
                         `transition-all outline-none focus-visible:ring-2 focus-visible:ring-tracel-accent-blue/40 ` +
                         (!attackSimEnabled ? 'text-white' : 'text-slate-300 hover:text-white')
                       }
@@ -265,7 +265,7 @@ export default function Dashboard() {
                         toggleAttack(true);
                       }}
                       className={
-                        `flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold ` +
+                        `flex items-center justify-center gap-2 px-4 py-2 rounded-md text-xs font-semibold ` +
                         `transition-all outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 ` +
                         (attackSimEnabled ? 'text-white' : 'text-slate-300 hover:text-white')
                       }
@@ -341,12 +341,12 @@ export default function Dashboard() {
               <Wifi size={16} className="text-slate-200" /> {trafficView === 'globe' ? 'Global Traffic' : 'Live Bandwidth'}
             </h2>
             <div className="flex items-center gap-2">
-              <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10">
+              <div className="flex bg-zinc-900 p-1 rounded-lg border border-zinc-800">
                 <button
                   type="button"
                   onClick={() => setTrafficView('bandwidth')}
                   className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
-                    trafficView === 'bandwidth' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-slate-200'
+                    trafficView === 'bandwidth' ? 'bg-zinc-950/70 text-white' : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   Bandwidth
@@ -355,13 +355,13 @@ export default function Dashboard() {
                   type="button"
                   onClick={() => setTrafficView('globe')}
                   className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
-                    trafficView === 'globe' ? 'bg-white/10 text-white' : 'text-slate-400 hover:text-slate-200'
+                    trafficView === 'globe' ? 'bg-zinc-950/70 text-white' : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
                   Globe
                 </button>
               </div>
-              <span className="text-xs px-2.5 py-1 bg-gradient-to-r from-tracel-accent-blue/20 to-tracel-accent-purple/20 text-slate-200 rounded-xl border border-white/10">
+              <span className="text-xs px-2.5 py-1 bg-zinc-900 text-slate-200 rounded-lg border border-zinc-800">
                 <span
                   className={
                     attackActive

@@ -16,19 +16,19 @@ import ChatAssistant from './components/ChatAssistant.jsx';
 const clerkAppearance = {
   elements: {
     rootBox: 'w-full',
-    card: 'w-full max-w-none glass-card border border-white/10 shadow-none',
+    card: 'w-full max-w-none glass-card shadow-none',
     headerTitle: 'text-white text-2xl sm:text-3xl font-semibold tracking-tight',
     headerSubtitle: 'text-slate-400',
     socialButtonsBlockButton:
-      'glass rounded-xl border border-white/10 hover:bg-white/10 transition text-slate-100',
+      'glass rounded-lg hover:bg-zinc-800 transition text-slate-100',
     formButtonPrimary:
-      'w-full rounded-xl border border-white/10 bg-gradient-to-r from-tracel-accent-blue/25 to-tracel-accent-purple/25 hover:from-tracel-accent-blue/35 hover:to-tracel-accent-purple/35 text-white font-semibold transition',
+      'btn-primary w-full font-semibold',
     formFieldLabel: 'text-slate-300',
     formFieldInput:
-      'glass rounded-xl border border-white/10 text-slate-100 placeholder:text-slate-500 focus:ring-2 focus:ring-tracel-accent-blue/40 focus:border-white/20',
+      'glass rounded-lg text-slate-100 placeholder:text-slate-500 focus:ring-2 focus:ring-tracel-accent-blue/40 focus:border-zinc-700',
     otpCodeFieldInput:
-      'glass rounded-xl border border-white/10 text-slate-100 placeholder:text-slate-500 focus:ring-2 focus:ring-tracel-accent-blue/40 focus:border-white/20',
-    dividerLine: 'bg-white/10',
+      'glass rounded-lg text-slate-100 placeholder:text-slate-500 focus:ring-2 focus:ring-tracel-accent-blue/40 focus:border-zinc-700',
+    dividerLine: 'bg-zinc-800',
     dividerText: 'text-slate-400',
     footerActionText: 'text-slate-400',
     footerActionLink: 'text-slate-200 hover:text-white',

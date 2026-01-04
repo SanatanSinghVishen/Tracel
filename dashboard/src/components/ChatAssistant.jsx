@@ -90,7 +90,7 @@ function ScanningWave() {
         {bars.map((i) => (
           <MotionSpan
             key={i}
-            className="w-[3px] rounded-full bg-cyan-400/80 shadow-[0_0_12px_rgba(34,211,238,0.45)]"
+            className="w-[3px] rounded-full bg-zinc-400/70"
             initial={false}
             animate={{
               height: [6, 16, 8, 14, 6],
@@ -370,10 +370,9 @@ export default function ChatAssistant({
               onClick={() => setOpen(true)}
               className={[
                 'relative grid place-items-center h-14 w-14 rounded-full',
-                'bg-slate-950/70 border border-white/10 backdrop-blur-xl',
-                'shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_0_28px_rgba(34,211,238,0.22)]',
-                'hover:shadow-[0_0_0_1px_rgba(255,255,255,0.10),0_0_40px_rgba(34,211,238,0.30)]',
-                'transition-shadow',
+                'bg-zinc-950/70 border border-zinc-800',
+                'shadow-none hover:border-zinc-700',
+                'transition-colors',
               ].join(' ')}
               initial={{ opacity: 0, scale: 0.9, y: 12 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
@@ -385,17 +384,12 @@ export default function ChatAssistant({
                 className="absolute inset-0 rounded-full"
                 animate={{
                   boxShadow: [
-                    '0 0 0 0 rgba(34,211,238,0.22)',
-                    '0 0 0 12px rgba(34,211,238,0.06)',
-                    '0 0 0 0 rgba(34,211,238,0.18)',
+                    '0 0 0 0 rgba(255,255,255,0.10)',
+                    '0 0 0 10px rgba(255,255,255,0.03)',
+                    '0 0 0 0 rgba(255,255,255,0.08)',
                   ],
                 }}
                 transition={{ duration: 2.2, repeat: Infinity, ease: 'easeInOut' }}
-              />
-              <MotionSpan
-                className="absolute -inset-2 rounded-full bg-cyan-400/10 blur-xl"
-                animate={{ opacity: [0.35, 0.65, 0.35], scale: [0.96, 1.05, 0.96] }}
-                transition={{ duration: 2.6, repeat: Infinity, ease: 'easeInOut' }}
               />
 
               <MotionDiv
@@ -403,7 +397,7 @@ export default function ChatAssistant({
                 animate={{ y: [0, -1.5, 0], rotate: [0, 2, 0] }}
                 transition={{ duration: 2.8, repeat: Infinity, ease: 'easeInOut' }}
               >
-                <Sparkles className="h-6 w-6 text-cyan-400 drop-shadow-[0_0_14px_rgba(34,211,238,0.6)]" />
+                <Sparkles className="h-6 w-6 text-slate-200" />
               </MotionDiv>
 
               <span className="sr-only">Open Tracel AI assistant</span>
@@ -425,27 +419,27 @@ export default function ChatAssistant({
           >
             <div
               className={[
-                'relative overflow-hidden rounded-3xl',
-                'bg-slate-950/90 border border-white/10 backdrop-blur-xl',
-                'shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_0_60px_rgba(34,211,238,0.14)]',
+                'relative overflow-hidden rounded-lg',
+                'bg-zinc-900 border border-zinc-800',
+                'shadow-none',
               ].join(' ')}
             >
               <div className="pointer-events-none absolute inset-0 opacity-[0.07]">
                 <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.07)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.07)_1px,transparent_1px)] bg-[size:18px_18px]" />
-                <div className="absolute inset-0 bg-gradient-to-b from-cyan-400/8 via-transparent to-transparent" />
+                <div className="absolute inset-0 bg-gradient-to-b from-white/5 via-transparent to-transparent" />
               </div>
 
               {/* Header */}
-              <div className="relative flex items-center justify-between px-5 py-4 border-b border-white/10">
+              <div className="relative flex items-center justify-between px-5 py-4 border-b border-zinc-800">
                 <div className="flex items-center gap-3">
-                  <div className="grid place-items-center h-9 w-9 rounded-2xl bg-white/5 border border-white/10">
-                    <Bot className="h-5 w-5 text-cyan-400" />
+                  <div className="grid place-items-center h-9 w-9 rounded-lg bg-zinc-950/60 border border-zinc-800">
+                    <Bot className="h-5 w-5 text-slate-200" />
                   </div>
                   <div className="leading-tight">
                     <div className="text-sm font-semibold text-slate-100 tracking-tight">TRACER</div>
                     <div className="flex items-center gap-2 text-[11px] text-slate-300">
                       <MotionSpan
-                        className="inline-block h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_16px_rgba(52,211,153,0.55)]"
+                        className="inline-block h-2 w-2 rounded-full bg-emerald-400"
                         animate={{ opacity: [0.25, 1, 0.25] }}
                         transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
                       />
@@ -457,7 +451,7 @@ export default function ChatAssistant({
                 <button
                   type="button"
                   onClick={() => setOpen(false)}
-                  className="rounded-2xl p-2 text-slate-300 hover:text-white hover:bg-white/5 border border-transparent hover:border-white/10 transition"
+                  className="rounded-lg p-2 text-slate-300 hover:text-white hover:bg-zinc-800 border border-transparent hover:border-zinc-700 transition"
                   aria-label="Close chat"
                 >
                   <X className="h-5 w-5" />
@@ -465,7 +459,7 @@ export default function ChatAssistant({
               </div>
 
               {/* Messages */}
-              <div className="relative px-4 py-4 max-h-[min(62vh,520px)] overflow-y-auto scroll-hidden space-y-3 bg-slate-950/25">
+              <div className="relative px-4 py-4 max-h-[min(62vh,520px)] overflow-y-auto scroll-hidden space-y-3 bg-zinc-950/40">
                 {messages.map((m) => {
                   const isUser = m.role === 'user';
                   const isError = m.tone === 'error';
@@ -474,20 +468,20 @@ export default function ChatAssistant({
                     <div key={m.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                       <div className={`max-w-[86%] ${isUser ? 'items-end' : 'items-start'} flex gap-2`}>
                         {!isUser ? (
-                          <div className="mt-1 grid place-items-center h-8 w-8 rounded-2xl bg-white/5 border border-white/10 shrink-0">
-                            <Bot className="h-4 w-4 text-cyan-400" />
+                          <div className="mt-1 grid place-items-center h-8 w-8 rounded-lg bg-zinc-950/60 border border-zinc-800 shrink-0">
+                            <Bot className="h-4 w-4 text-slate-200" />
                           </div>
                         ) : null}
 
                         <div
                           className={[
-                            'rounded-2xl px-4 py-3',
+                            'rounded-lg px-4 py-3',
                             'text-sm leading-relaxed',
                             isUser
-                              ? 'text-white bg-gradient-to-r from-blue-600 to-blue-500 shadow-[0_0_20px_rgba(59,130,246,0.24)]'
+                              ? 'text-white bg-zinc-800/60 border border-zinc-700'
                               : isError
                               ? 'text-rose-200 bg-rose-500/10 border border-rose-500/20'
-                              : 'text-slate-200 bg-slate-950/55 border border-white/10',
+                              : 'text-slate-200 bg-zinc-950/60 border border-zinc-800',
                           ].join(' ')}
                         >
                           <div className="whitespace-pre-wrap">{m.content || '...'}</div>
@@ -504,7 +498,7 @@ export default function ChatAssistant({
                         </div>
 
                         {isUser ? (
-                          <div className="mt-1 grid place-items-center h-8 w-8 rounded-2xl bg-white/5 border border-white/10 shrink-0">
+                          <div className="mt-1 grid place-items-center h-8 w-8 rounded-lg bg-zinc-950/60 border border-zinc-800 shrink-0">
                             <User className="h-4 w-4 text-slate-200" />
                           </div>
                         ) : null}
@@ -516,10 +510,10 @@ export default function ChatAssistant({
                 {loading ? (
                   <div className="flex justify-start">
                     <div className="max-w-[86%] flex gap-2">
-                      <div className="mt-1 grid place-items-center h-8 w-8 rounded-2xl bg-white/5 border border-white/10 shrink-0">
-                        <Bot className="h-4 w-4 text-cyan-400" />
+                      <div className="mt-1 grid place-items-center h-8 w-8 rounded-lg bg-zinc-950/60 border border-zinc-800 shrink-0">
+                        <Bot className="h-4 w-4 text-slate-200" />
                       </div>
-                      <div className="rounded-2xl px-4 py-3 bg-slate-950/55 border border-white/10">
+                      <div className="rounded-lg px-4 py-3 bg-zinc-950/60 border border-zinc-800">
                         <ScanningWave />
                       </div>
                     </div>
@@ -533,9 +527,9 @@ export default function ChatAssistant({
               <div className="relative px-4 pb-4">
                 <div
                   className={[
-                    'flex items-end gap-3 rounded-2xl px-3 py-3',
-                    'bg-slate-950/40 border border-white/10 backdrop-blur-xl',
-                    'shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_0_24px_rgba(34,211,238,0.10)]',
+                    'flex items-end gap-3 rounded-lg px-3 py-3',
+                    'bg-zinc-950/60 border border-zinc-800',
+                    'shadow-none',
                   ].join(' ')}
                 >
                   <textarea
@@ -563,12 +557,11 @@ export default function ChatAssistant({
                     onClick={sendMessage}
                     disabled={!input.trim() || loading}
                     className={[
-                      'grid place-items-center h-10 w-10 rounded-2xl',
-                      'bg-cyan-400/10 border border-cyan-400/20',
-                      'text-cyan-300 hover:text-cyan-200',
+                      'grid place-items-center h-10 w-10 rounded-lg',
+                      'bg-white text-black border border-white',
+                      'hover:bg-zinc-200',
                       'disabled:opacity-40 disabled:cursor-not-allowed',
-                      'shadow-[0_0_18px_rgba(34,211,238,0.18)] hover:shadow-[0_0_26px_rgba(34,211,238,0.28)]',
-                      'transition-shadow',
+                      'transition-colors',
                     ].join(' ')}
                     whileHover={{ scale: 1.04 }}
                     whileTap={{ scale: 0.98 }}

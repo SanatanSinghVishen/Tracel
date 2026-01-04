@@ -47,6 +47,44 @@
     backdrop-filter: none;
   }
 
+  /* Legacy theme compatibility
+     Some older components used white translucent + blur + extra rounding.
+     Remap those tokens to the current zinc industrial theme so the UI stays consistent.
+  */
+  .border-white\/10 {
+    border-color: rgb(39 39 42);
+  }
+
+  .border-white\/20 {
+    border-color: rgb(63 63 70);
+  }
+
+  .bg-white\/5 {
+    background-color: rgb(9 9 11 / 0.55);
+  }
+
+  .bg-white\/10 {
+    background-color: rgb(24 24 27 / 0.55);
+  }
+
+  .hover\:bg-white\/10:hover {
+    background-color: rgb(39 39 42);
+  }
+
+  .hover\:bg-white\/5:hover {
+    background-color: rgb(24 24 27 / 0.7);
+  }
+
+  .rounded-2xl {
+    border-radius: 0.5rem;
+  }
+
+  .backdrop-blur-md,
+  .backdrop-blur-lg,
+  .backdrop-blur-xl {
+    backdrop-filter: none;
+  }
+
   .glow-hover {
     @apply transition-colors duration-150;
   }

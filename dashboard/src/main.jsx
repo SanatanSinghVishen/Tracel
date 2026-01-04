@@ -20,44 +20,43 @@ const clerkAppearance = {
     colorDanger: '#ef4444',
     colorBackground: '#020617',
     colorText: '#ffffff',
-    colorInputBackground: 'rgba(255,255,255,0.05)',
+    colorInputBackground: 'rgba(9,9,11,0.55)',
     colorInputText: '#e2e8f0',
-    borderRadius: '16px',
+    borderRadius: '12px',
     fontFamily:
       "Inter, ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji'",
   },
   elements: {
     // Center + constrain consistently (modal + dedicated routes)
     rootBox: 'w-full flex justify-center',
-    card: 'w-full max-w-[720px] glass-card glow-hover border border-white/10 shadow-none p-8 sm:p-10',
+    card: 'w-full max-w-[720px] glass-card glow-hover shadow-none p-8 sm:p-10',
     headerTitle: 'text-white text-2xl sm:text-3xl font-semibold tracking-tight',
     headerSubtitle: 'text-slate-400',
     socialButtonsBlockButton:
-      'glass rounded-xl border border-white/10 hover:bg-white/10 transition text-slate-100',
-    formButtonPrimary:
-      'w-full rounded-xl border border-white/10 bg-gradient-to-r from-tracel-accent-blue/25 to-tracel-accent-purple/25 hover:from-tracel-accent-blue/35 hover:to-tracel-accent-purple/35 text-white font-semibold transition',
+      'glass rounded-lg hover:bg-zinc-800 transition text-slate-100',
+    formButtonPrimary: 'btn-primary w-full font-semibold',
     formFieldInput:
-      'glass rounded-xl border border-white/10 text-slate-100 placeholder:text-slate-500 focus:ring-2 focus:ring-tracel-accent-blue/40 focus:border-white/20',
+      'glass rounded-lg text-slate-100 placeholder:text-slate-500 focus:ring-2 focus:ring-tracel-accent-blue/40 focus:border-zinc-700',
     formFieldLabel: 'text-slate-300',
     footerActionText: 'text-slate-400',
     footerActionLink: 'text-slate-200 hover:text-white',
-    dividerLine: 'bg-white/10',
+    dividerLine: 'bg-zinc-800',
     dividerText: 'text-slate-400',
 
     // Modal polish
-    modalBackdrop: 'backdrop-blur-md',
+    modalBackdrop: '',
     modalContent: 'p-0',
 
     // UserButton (account menu)
     userButtonBox: 'flex items-center',
     userButtonTrigger:
-      'h-9 w-9 flex items-center justify-center leading-none rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition',
-    userButtonPopoverCard: 'glass-card border border-white/10 shadow-none',
+      'h-9 w-9 flex items-center justify-center leading-none rounded-lg border border-zinc-800 bg-zinc-950/60 hover:bg-zinc-900 transition',
+    userButtonPopoverCard: 'glass-card shadow-none',
     userButtonPopoverMain: 'text-slate-200',
-    userButtonPopoverActionButton: 'hover:bg-white/10 text-white',
+    userButtonPopoverActionButton: 'hover:bg-zinc-800 text-white',
     userButtonPopoverActionButtonText: 'text-white',
     userButtonPopoverActionButtonIcon: 'text-slate-200',
-    userButtonPopoverFooter: 'border-t border-white/10',
+    userButtonPopoverFooter: 'border-t border-zinc-800',
   },
 };
 
