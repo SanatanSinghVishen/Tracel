@@ -62,7 +62,7 @@ export default function Contact() {
   }
 
   return (
-    <div className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden scroll-hidden space-y-6 animate-fade-in">
+    <div className="min-w-0 space-y-6 animate-fade-in">
       {/* Header */}
       <div className="glass-card glow-hover p-5 sm:p-6">
         <div className="flex items-center gap-3">

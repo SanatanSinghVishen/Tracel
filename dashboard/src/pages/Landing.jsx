@@ -464,8 +464,8 @@ export default function Landing() {
                   className="glass rounded-2xl border border-white/10 p-5 glow-hover"
                 >
                   <div className="flex items-center gap-3">
-                    <div className="h-10 w-10 rounded-2xl glass flex items-center justify-center">
-                      <div className="absolute inset-0 rounded-2xl opacity-60 bg-gradient-to-br from-tracel-accent-blue/20 to-tracel-accent-purple/20" />
+                    <div className="relative h-10 w-10 rounded-2xl glass flex items-center justify-center">
+                      <div className="pointer-events-none absolute inset-0 rounded-2xl opacity-60 bg-gradient-to-br from-tracel-accent-blue/20 to-tracel-accent-purple/20" />
                       <Icon className="relative h-5 w-5 text-white" />
                     </div>
                     <div className="text-white font-medium">{f.title}</div>

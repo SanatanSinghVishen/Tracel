@@ -127,7 +127,7 @@ export default function About() {
     !!creator.links.email;
 
   return (
-    <div className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden scroll-hidden animate-fade-in">
+    <div className="min-w-0 animate-fade-in">
       <div className="space-y-4 sm:space-y-6">
         {/* Hero */}
         <div className="glass-card glow-hover p-6 sm:p-7 relative pb-16 sm:pb-18">

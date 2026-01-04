@@ -819,7 +819,7 @@ export default function Forensics() {
   }, []);
 
   return (
-    <div className="h-full min-h-0 min-w-0 overflow-y-auto overflow-x-hidden scroll-hidden space-y-6 animate-fade-in">
+    <div className="min-w-0 space-y-6 animate-fade-in">
       <div className="glass-card glow-hover p-5 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
