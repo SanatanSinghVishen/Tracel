@@ -78,14 +78,78 @@ function isAiDisabled() {
     return raw === '1' || raw === 'true' || raw === 'yes';
 }
 
+function isHostedEnvironment() {
+    const nodeEnv = String(process.env.NODE_ENV || '').trim().toLowerCase();
+    return nodeEnv === 'production' || !!String(process.env.RENDER_EXTERNAL_URL || '').trim();
+}
+
+function getServiceExternalOrigin() {
+    const raw = String(process.env.RENDER_EXTERNAL_URL || '').trim();
+    if (!raw) return null;
+    try {
+        return new URL(raw).origin;
+    } catch {
+        return null;
+    }
+}
+
+let lastAiConfigWarnAt = 0;
+function warnAiConfigOncePerInterval(message, meta) {
+    const now = Date.now();
+    if (now - lastAiConfigWarnAt < 10_000) return;
+    lastAiConfigWarnAt = now;
+    log.warn(message, meta || undefined);
+}
+
 function getAiPredictUrl() {
     const explicit = String(process.env.AI_PREDICT_URL || '').trim();
-    if (explicit) return explicit;
+    if (explicit) {
+        const ext = getServiceExternalOrigin();
+        if (ext) {
+            try {
+                if (new URL(explicit).origin === ext) {
+                    warnAiConfigOncePerInterval('[AI] Misconfigured AI_PREDICT_URL: points to this service; set it to your ai-engine service URL', {
+                        AI_PREDICT_URL: explicit,
+                        RENDER_EXTERNAL_URL: String(process.env.RENDER_EXTERNAL_URL || '').trim() || undefined,
+                    });
+                    return null;
+                }
+            } catch {
+                // keep explicit value if it can't be parsed
+            }
+        }
+        return explicit;
+    }
 
     const base = String(process.env.AI_ENGINE_URL || '').trim();
     if (base) {
         // Support either providing the origin (https://svc) or a full /predict URL.
-        if (/\/predict\/?$/i.test(base)) return base;
+        const candidate = /\/predict\/?$/i.test(base) ? base : (() => {
+            try {
+                return new URL('/predict', base).toString();
+            } catch {
+                return null;
+            }
+        })();
+
+        if (candidate) {
+            const ext = getServiceExternalOrigin();
+            if (ext) {
+                try {
+                    if (new URL(candidate).origin === ext) {
+                        warnAiConfigOncePerInterval('[AI] Misconfigured AI_ENGINE_URL: points to this service; set it to your ai-engine service URL', {
+                            AI_ENGINE_URL: base,
+                            resolvedPredictUrl: candidate,
+                            RENDER_EXTERNAL_URL: String(process.env.RENDER_EXTERNAL_URL || '').trim() || undefined,
+                        });
+                        return null;
+                    }
+                } catch {
+                    // best-effort
+                }
+            }
+            return candidate;
+        }
         try {
             return new URL('/predict', base).toString();
         } catch {
@@ -93,6 +157,9 @@ function getAiPredictUrl() {
         }
     }
 
+    // In hosted environments (Render), defaulting to localhost is almost always wrong.
+    // Treat missing config as "AI not configured" so we can surface a clear status.
+    if (isHostedEnvironment()) return null;
     return 'http://127.0.0.1:5000/predict';
 }
 
@@ -101,6 +168,7 @@ function getAiHealthUrl() {
     if (raw) return raw;
 
     const predict = getAiPredictUrl();
+    if (!predict) return null;
     // Common pattern: /predict -> /health?load=1
     if (/\/predict\/?$/i.test(predict)) {
         return predict.replace(/\/predict\/?$/i, '/health?load=1');
@@ -112,7 +180,7 @@ function getAiHealthUrl() {
         u.search = 'load=1';
         return u.toString();
     } catch {
-        return 'http://127.0.0.1:5000/health?load=1';
+        return isHostedEnvironment() ? null : 'http://127.0.0.1:5000/health?load=1';
     }
 }
 
@@ -148,8 +216,25 @@ async function pollAiHealthOnce() {
         return;
     }
 
+    const healthUrl = getAiHealthUrl();
+    if (!healthUrl) {
+        aiStatus.ok = false;
+        aiStatus.modelLoaded = null;
+        aiStatus.threshold = null;
+        aiStatus.lastError = { message: 'AI not configured', code: 'AI_NOT_CONFIGURED' };
+        if (lastAiStatusBroadcastOk === null || lastAiStatusBroadcastOk !== aiStatus.ok) {
+            lastAiStatusBroadcastOk = aiStatus.ok;
+            try {
+                io.emit('ai_status', { ...aiStatus });
+            } catch {
+                // best-effort
+            }
+        }
+        return;
+    }
+
     try {
-        const res = await axios.get(getAiHealthUrl(), { timeout: 1500 });
+        const res = await axios.get(healthUrl, { timeout: 1500 });
         const ok = !!res?.data?.ok;
         const modelLoaded = typeof res?.data?.modelLoaded === 'boolean' ? res.data.modelLoaded : null;
         const thrRaw = res?.data?.threshold;
@@ -180,6 +265,16 @@ async function pollAiHealthOnce() {
             // best-effort
         }
     }
+}
+
+function getAiBaseUrl() {
+    const explicitPredict = getAiPredictUrl();
+    if (explicitPredict) return String(explicitPredict).replace(/\/predict\/?$/i, '');
+
+    const base = String(process.env.AI_ENGINE_URL || '').trim();
+    if (base) return String(base).replace(/\/predict\/?$/i, '');
+
+    return isHostedEnvironment() ? null : 'http://127.0.0.1:5000';
 }
 
 setInterval(() => {
@@ -875,8 +970,8 @@ function bucketKeyUtc(date, bucket) {
 
 async function getThreatIntelReportFromHeaders(headers, { sinceHours = 24, limit = 10000 } = {}) {
     try {
-        const base = process.env.AI_ENGINE_URL || process.env.AI_PREDICT_URL || 'http://127.0.0.1:5000';
-        const reportBase = String(base).replace(/\/predict\/?$/, '');
+        const reportBase = getAiBaseUrl();
+        if (!reportBase) throw new Error('AI not configured');
 
         const auth = await getAuthContextFromHeaders(headers);
 

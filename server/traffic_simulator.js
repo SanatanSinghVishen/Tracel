@@ -12,6 +12,21 @@ function warnAiOncePerInterval(message, meta) {
     log.warn(message, meta || undefined);
 }
 
+function isHostedEnvironment() {
+    const nodeEnv = String(process.env.NODE_ENV || '').trim().toLowerCase();
+    return nodeEnv === 'production' || !!String(process.env.RENDER_EXTERNAL_URL || '').trim();
+}
+
+function getServiceExternalOrigin() {
+    const raw = String(process.env.RENDER_EXTERNAL_URL || '').trim();
+    if (!raw) return null;
+    try {
+        return new URL(raw).origin;
+    } catch {
+        return null;
+    }
+}
+
 const TARGET_IP = "10.0.0.1";
 // Simulate multiple internal services behind a load balancer / subnet.
 const TARGET_SERVICE_IPS = [
@@ -63,18 +78,55 @@ const ATTACK_DST_PORTS = [
 
 function getAiPredictUrl() {
     const explicit = String(process.env.AI_PREDICT_URL || '').trim();
-    if (explicit) return explicit;
+    if (explicit) {
+        const ext = getServiceExternalOrigin();
+        if (ext) {
+            try {
+                if (new URL(explicit).origin === ext) {
+                    warnAiOncePerInterval('[SIMULATOR] AI misconfigured: AI_PREDICT_URL points to this service; set it to your ai-engine URL', {
+                        AI_PREDICT_URL: explicit,
+                        RENDER_EXTERNAL_URL: String(process.env.RENDER_EXTERNAL_URL || '').trim() || undefined,
+                    });
+                    return null;
+                }
+            } catch {
+                // keep explicit value if it can't be parsed
+            }
+        }
+        return explicit;
+    }
 
     const base = String(process.env.AI_ENGINE_URL || '').trim();
     if (base) {
-        if (/\/predict\/?$/i.test(base)) return base;
-        try {
-            return new URL('/predict', base).toString();
-        } catch {
-            // Fall through
+        const candidate = /\/predict\/?$/i.test(base) ? base : (() => {
+            try {
+                return new URL('/predict', base).toString();
+            } catch {
+                return null;
+            }
+        })();
+
+        if (candidate) {
+            const ext = getServiceExternalOrigin();
+            if (ext) {
+                try {
+                    if (new URL(candidate).origin === ext) {
+                        warnAiOncePerInterval('[SIMULATOR] AI misconfigured: AI_ENGINE_URL points to this service; set it to your ai-engine URL', {
+                            AI_ENGINE_URL: base,
+                            resolvedPredictUrl: candidate,
+                            RENDER_EXTERNAL_URL: String(process.env.RENDER_EXTERNAL_URL || '').trim() || undefined,
+                        });
+                        return null;
+                    }
+                } catch {
+                    // best-effort
+                }
+            }
+            return candidate;
         }
     }
 
+    if (isHostedEnvironment()) return null;
     return 'http://127.0.0.1:5000/predict';
 }
 
@@ -276,11 +328,12 @@ function createTrafficStream({ owner, emitPacket, persistPacket } = {}) {
         const packetData = getPacketData(isAttackMode, { owner });
 
         // --- STEP 1: ASK AI FOR VERDICT ---
-        if (!isAiDisabled()) {
+        const aiUrl = !isAiDisabled() ? getAiPredictUrl() : null;
+        if (!isAiDisabled() && aiUrl) {
             try {
                 const aiId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
                 const response = await aiClient.post(
-                    getAiPredictUrl(),
+                    aiUrl,
                     {
                         id: aiId,
                         bytes: packetData.bytes,
@@ -309,13 +362,20 @@ function createTrafficStream({ owner, emitPacket, persistPacket } = {}) {
                 const code = error?.code;
                 const msg = error?.message;
                 warnAiOncePerInterval('[SIMULATOR] AI score unavailable (using null score)', {
-                    url: getAiPredictUrl(),
+                    url: aiUrl,
                     code,
                     status,
                     message: msg,
                     detail,
                 });
             }
+        } else if (!isAiDisabled() && !aiUrl) {
+            packetData.is_anomaly = false;
+            packetData.anomaly_score = null;
+            warnAiOncePerInterval('[SIMULATOR] AI not configured (skipping scoring)', {
+                hint: 'Set AI_ENGINE_URL to your ai-engine Render service (e.g., https://<ai-service>.onrender.com) or set AI_PREDICT_URL to the full /predict endpoint.',
+                RENDER_EXTERNAL_URL: String(process.env.RENDER_EXTERNAL_URL || '').trim() || undefined,
+            });
         } else {
             packetData.is_anomaly = false;
             packetData.anomaly_score = null;
