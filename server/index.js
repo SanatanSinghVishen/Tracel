@@ -1235,8 +1235,9 @@ async function computeThreatIntelFromMongo({ ownerUserId, since, to, limit }) {
         },
     };
 
-    const [totalThreats, topHostileIps, attackVectorDistribution, geoTopCountries] = await Promise.all([
-        Packet.countDocuments(baseMatch),
+    const totalThreats = await Packet.countDocuments(baseMatch);
+
+    const [topHostileIps, attackVectorDistribution, geoTopCountries] = await Promise.all([
         Packet.aggregate([
             { $match: baseMatch },
             {
