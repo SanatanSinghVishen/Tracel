@@ -11,6 +11,7 @@ import ContactSubmissions from './pages/ContactSubmissions';
 import Landing from './pages/Landing';
 import { SocketProvider } from './context/SocketContext.jsx';
 import { disableSmoothScroll, enableSmoothScroll } from './lib/scroller.js';
+import ChatAssistant from './components/ChatAssistant.jsx';
 
 const clerkAppearance = {
   elements: {
@@ -53,13 +54,18 @@ function AuthShell({ children }) {
 function AppShell() {
   return (
     <SocketProvider>
-      <div className="h-screen min-h-screen font-sans overflow-hidden">
-        <div className="h-full min-w-0 flex gap-4 p-4">
+      <div className="h-screen min-h-screen font-sans overflow-hidden bg-zinc-950 text-white">
+        <div className="h-full min-w-0 flex">
           <Sidebar />
-          <main className="flex-1 min-w-0 overflow-hidden">
-            <Outlet />
-          </main>
+
+          <div className="flex-1 min-w-0 flex flex-col">
+            <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden">
+              <Outlet />
+            </main>
+          </div>
         </div>
+
+        <ChatAssistant />
       </div>
     </SocketProvider>
   );

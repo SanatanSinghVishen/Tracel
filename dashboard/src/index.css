@@ -5,14 +5,11 @@
 @layer base {
   html {
     @apply min-h-screen;
-    @apply bg-gradient-to-br from-slate-900 via-slate-950 to-black;
-    background-attachment: fixed;
+    @apply bg-zinc-950 text-white;
   }
 
   body {
-    @apply min-h-screen text-slate-100 font-sans;
-    @apply bg-gradient-to-br from-slate-900 via-slate-950 to-black;
-    background-attachment: fixed;
+    @apply min-h-screen text-white font-sans bg-zinc-950;
   }
 
   #root {
@@ -22,9 +19,9 @@
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: rgba(2, 6, 23, 0.6); }
-::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.25); border-radius: 999px; }
-::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.35); }
+::-webkit-scrollbar-track { background: rgb(9 9 11); }
+::-webkit-scrollbar-thumb { background: rgb(39 39 42); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: rgb(63 63 70); }
 
 /* Glassmorphism + micro-interactions */
 @layer utilities {
@@ -39,38 +36,34 @@
     height: 0;
   }
 
+  /* Render/Vercel-like surfaces */
   .glass {
-    @apply bg-white/5 backdrop-blur-xl border border-white/10;
+    @apply bg-zinc-900 border border-zinc-800;
+    backdrop-filter: none;
   }
 
   .glass-card {
-    @apply glass rounded-2xl;
+    @apply bg-zinc-900 border border-zinc-800 rounded-lg;
+    backdrop-filter: none;
   }
 
   .glow-hover {
-    position: relative;
-    isolation: isolate;
-    @apply transition-all duration-200 ease-out;
-    @apply ring-1 ring-white/10;
+    @apply transition-colors duration-150;
   }
 
   .glow-hover:hover {
-    @apply ring-1 ring-white/15;
-    box-shadow:
-      0 0 0 1px rgba(59, 130, 246, 0.06),
-      0 0 0 1px rgba(139, 92, 246, 0.04),
-      0 14px 42px rgba(0, 0, 0, 0.28);
+    @apply border-zinc-700;
+    box-shadow: none;
   }
 
   /* Micro-interactions */
   .hover-lift {
-    position: relative;
-    @apply transition-transform duration-200 ease-out;
-    transform: translateZ(0);
+    @apply transition-colors duration-150;
   }
 
   .hover-lift:hover {
-    transform: translateY(-2px);
+    @apply border-zinc-700;
+    transform: none;
   }
 
   .interactive {
@@ -78,42 +71,54 @@
   }
 
   .interactive:hover {
-    @apply border-white/20;
+    @apply border-zinc-700;
   }
 
   .data-mono {
     @apply font-mono tabular-nums;
   }
 
+  /* Buttons */
+  .btn-primary {
+    @apply inline-flex items-center justify-center rounded-lg px-3 py-2;
+    @apply bg-white text-black border border-white;
+    @apply hover:bg-zinc-200 transition;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-secondary {
+    @apply inline-flex items-center justify-center rounded-lg px-3 py-2;
+    @apply bg-transparent text-white border border-zinc-700;
+    @apply hover:bg-zinc-800 transition;
+    @apply disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  /* Status pills */
+  .pill {
+    @apply inline-flex items-center gap-2 px-2 py-1 rounded-md text-xs border;
+  }
+
+  .pill-live {
+    @apply border-green-500/20 text-green-500 bg-green-500/10;
+  }
+
+  .pill-attack {
+    @apply border-red-500/20 text-red-500 bg-red-500/10;
+  }
+
+  .pill-neutral {
+    @apply border-zinc-700 text-zinc-400 bg-zinc-800/40;
+  }
+
   /* Animated gradient border (slow rotating) */
+  /* No animated borders in the industrial theme */
   .animated-border {
     position: relative;
     isolation: isolate;
   }
 
   .animated-border::before {
-    content: '';
-    position: absolute;
-    inset: -1px;
-    border-radius: inherit;
-    padding: 1px;
-    background: conic-gradient(
-      from 0deg,
-      rgba(59, 130, 246, 0.0),
-      rgba(59, 130, 246, 0.55),
-      rgba(139, 92, 246, 0.55),
-      rgba(59, 130, 246, 0.0)
-    );
-    animation: tracelBorderSpin 14s linear infinite;
-    opacity: 0.75;
-    pointer-events: none;
-    z-index: 0;
-
-    -webkit-mask:
-      linear-gradient(#000 0 0) content-box,
-      linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
+    content: none;
   }
 
   .animated-border > * {

@@ -674,6 +674,10 @@ const corsOptions = {
         return cb(null, false);
     },
     credentials: true,
+    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-tracel-anon-id'],
+    exposedHeaders: ['Retry-After'],
+    maxAge: 600,
 };
 
 function parseCookies(cookieHeader) {

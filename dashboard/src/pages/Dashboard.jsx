@@ -50,7 +50,6 @@ export default function Dashboard() {
           for (let i = 0; i < attempts; i += 1) {
             const res = await fetch(url, options);
             if (res.status !== 503 || i === attempts - 1) return res;
-            // eslint-disable-next-line no-await-in-loop
             await new Promise((r) => setTimeout(r, 400 * (i + 1)));
           }
           return fetch(url, options);
@@ -376,7 +375,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="flex-1 min-h-0">
+          <div className="flex-1 min-h-0 min-w-0">
             {trafficView === 'globe' ? (
               <div className="h-full">
                 <TrafficGlobe />
@@ -388,7 +387,7 @@ export default function Dashboard() {
                 <div className="h-3 w-3/4 skeleton" />
               </div>
             ) : (
-              <div className="h-full min-h-[224px] min-w-0">
+              <div className="h-56 sm:h-64 lg:h-72 min-h-[224px] min-w-0">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={224}>
                   <AreaChart data={trafficData}>
                     <defs>

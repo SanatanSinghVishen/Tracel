@@ -369,7 +369,6 @@ export default function Forensics() {
       const res = await fetch(url, options);
       // Render/hosting redeploys can briefly return 503; retry with a small backoff.
       if (res.status !== 503 || i === attempts - 1) return res;
-      // eslint-disable-next-line no-await-in-loop
       await new Promise((r) => setTimeout(r, 400 * (i + 1)));
     }
     return fetch(url, options);

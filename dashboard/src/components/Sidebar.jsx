@@ -1,4 +1,4 @@
-import { LayoutDashboard, Database, Settings, ShieldAlert, Lock, Info, Mail, Inbox } from 'lucide-react';
+import { LayoutDashboard, Database, Settings, ShieldAlert, Info, Mail, Inbox } from 'lucide-react';
 import { Link, NavLink } from 'react-router-dom';
 import { SignedIn, SignedOut, SignInButton, SignUpButton, UserButton, useUser } from '@clerk/clerk-react';
 
@@ -32,28 +32,17 @@ const Sidebar = () => {
   ];
 
   return (
-    <aside className="w-[72px] md:w-[280px] shrink-0 h-full">
-      <div className="h-full glass-card p-3 md:p-4 flex flex-col">
+    <aside className="w-[72px] md:w-[260px] shrink-0 h-full bg-zinc-950 border-r border-zinc-800">
+      <div className="h-full p-3 md:p-4 flex flex-col">
 
         {/* Brand */}
-        <Link
-          to="/"
-          className="nav-tile flex items-center gap-3 px-2 py-2.5 md:px-3 md:py-3 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/8 transition"
-          aria-label="Home"
-        >
-          <div className="relative h-11 w-11 rounded-2xl border border-white/10 bg-black/30 overflow-hidden flex items-center justify-center">
-            <div className="absolute inset-0 opacity-80 bg-gradient-to-br from-tracel-accent-blue/35 to-tracel-accent-purple/30" />
-            <div className="absolute inset-px rounded-2xl bg-black/35" />
-            <ShieldAlert className="relative w-5 h-5 text-slate-100" />
+        <Link to="/" className="flex items-center gap-3 px-2 py-2.5 md:px-3 md:py-3 rounded-lg border border-zinc-800 bg-zinc-900 hover:bg-zinc-900/70 transition" aria-label="Home">
+          <div className="h-10 w-10 rounded-lg border border-zinc-800 bg-zinc-950 grid place-items-center">
+            <ShieldAlert className="w-5 h-5 text-white" />
           </div>
           <div className="hidden md:block">
-            <div className="flex items-center">
-              <div className="text-sm font-extrabold tracking-[0.28em] uppercase bg-gradient-to-r from-tracel-accent-blue to-tracel-accent-purple bg-clip-text text-transparent">
-                TRACEL
-              </div>
-            </div>
-            <div className="mt-1 text-xs text-slate-300 tracking-tight">Command Center</div>
-            <div className="mt-2 h-px w-full bg-gradient-to-r from-tracel-accent-blue/60 via-white/10 to-tracel-accent-purple/60" />
+            <div className="text-xs font-semibold tracking-[0.22em] uppercase text-white">TRACEL</div>
+            <div className="mt-1 text-xs text-zinc-400">Command Center</div>
           </div>
         </Link>
 
@@ -65,59 +54,49 @@ const Sidebar = () => {
             to={item.path}
             title={item.label}
             aria-label={item.label}
-            className={({ isActive }) => `
-              group nav-tile relative flex items-center gap-3 px-3 py-2.5 rounded-xl outline-none transition-all
-              focus-visible:ring-2 focus-visible:ring-tracel-accent-blue/40 focus-visible:ring-offset-0
-              ${isActive
-                ? 'nav-tile--active text-white bg-white/8'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}
-            `}
+            className={({ isActive }) =>
+              `group relative flex items-center gap-3 px-3 py-2.5 rounded-lg outline-none transition ${
+                isActive
+                  ? 'bg-zinc-800 text-white'
+                  : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+              }`
+            }
           >
             {({ isActive }) => (
               <>
-                <div
-                  className={`h-9 w-9 rounded-xl grid place-items-center transition border ${
-                    isActive
-                      ? 'bg-white/10 border-white/15'
-                      : 'bg-white/5 border-white/10 group-hover:bg-white/10'
-                  }`}
-                >
-                  <item.icon size={18} className="text-slate-200" />
+                <div className="h-9 w-9 rounded-lg grid place-items-center border border-zinc-800 bg-zinc-950 group-hover:bg-zinc-950/70">
+                  <item.icon size={18} className={isActive ? 'text-white' : 'text-zinc-300'} />
                 </div>
                 <span className="hidden md:block font-medium text-sm">{item.label}</span>
+                {isActive ? <span className="ml-auto hidden md:inline-flex h-2 w-5 rounded-full bg-green-500/90" /> : null}
               </>
             )}
           </NavLink>
         ))}
 
         {isAdmin ? (
-          <div className="pt-3 mt-3 border-t border-white/10">
+          <div className="pt-3 mt-3 border-t border-zinc-800">
             {adminNavItems.map((item) => (
               <NavLink
                 key={item.path}
                 to={item.path}
                 title={item.label}
                 aria-label={item.label}
-                className={({ isActive }) => `
-                  group nav-tile relative flex items-center gap-3 px-3 py-2.5 rounded-xl outline-none transition-all
-                  focus-visible:ring-2 focus-visible:ring-tracel-accent-blue/40 focus-visible:ring-offset-0
-                  ${isActive
-                    ? 'nav-tile--active text-white bg-white/8'
-                    : 'text-slate-400 hover:text-slate-200 hover:bg-white/5'}
-                `}
+                className={({ isActive }) =>
+                  `group relative flex items-center gap-3 px-3 py-2.5 rounded-lg outline-none transition ${
+                    isActive
+                      ? 'bg-zinc-800 text-white'
+                      : 'text-zinc-400 hover:text-white hover:bg-zinc-900'
+                  }`
+                }
               >
                 {({ isActive }) => (
                   <>
-                    <div
-                      className={`h-9 w-9 rounded-xl grid place-items-center transition border ${
-                        isActive
-                          ? 'bg-white/10 border-white/15'
-                          : 'bg-white/5 border-white/10 group-hover:bg-white/10'
-                      }`}
-                    >
-                      <item.icon size={18} className="text-slate-200" />
+                    <div className="h-9 w-9 rounded-lg grid place-items-center border border-zinc-800 bg-zinc-950 group-hover:bg-zinc-950/70">
+                      <item.icon size={18} className={isActive ? 'text-white' : 'text-zinc-300'} />
                     </div>
                     <span className="hidden md:block font-medium text-sm">{item.label}</span>
+                    {isActive ? <span className="ml-auto hidden md:inline-flex h-2 w-5 rounded-full bg-green-500/90" /> : null}
                   </>
                 )}
               </NavLink>
@@ -140,9 +119,9 @@ const Sidebar = () => {
               type="button"
               aria-label="Log in"
               title="Log in"
-              className="h-10 w-10 flex items-center justify-center rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 transition outline-none focus-visible:ring-2 focus-visible:ring-tracel-accent-blue/40"
+              className="h-10 w-10 flex items-center justify-center rounded-lg border border-zinc-800 bg-zinc-900 hover:bg-zinc-800 transition outline-none"
             >
-              <ShieldAlert className="w-5 h-5 text-slate-100" />
+              <ShieldAlert className="w-5 h-5 text-white" />
             </button>
           </SignInButton>
         </SignedOut>
@@ -150,8 +129,8 @@ const Sidebar = () => {
 
       <SignedIn>
         <div className="mt-auto hidden md:block px-2">
-          <div className="flex items-center justify-between rounded-2xl bg-white/5 border border-white/10 px-3 py-2.5">
-            <span className="text-xs text-slate-400 leading-none">Account</span>
+          <div className="flex items-center justify-between rounded-lg bg-zinc-900 border border-zinc-800 px-3 py-2.5">
+            <span className="text-xs text-zinc-400 leading-none">Account</span>
             <div className="flex items-center justify-center">
               <UserButton afterSignOutUrl="/" />
             </div>
@@ -161,16 +140,16 @@ const Sidebar = () => {
 
       <SignedOut>
         <div className="mt-auto hidden md:block px-2">
-          <div className="glass-card p-4">
-            <p className="text-xs text-slate-400 uppercase tracking-wider">Account</p>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-4">
+            <p className="text-xs text-zinc-400 uppercase tracking-wider">Account</p>
             <div className="mt-3 flex flex-col gap-2">
               <SignInButton mode="modal" forceRedirectUrl="/dashboard">
-                <button className="w-full glass rounded-xl border border-white/10 px-3 py-2 text-sm text-white hover:bg-white/10 transition">
+                <button className="w-full btn-secondary">
                   Log In
                 </button>
               </SignInButton>
               <SignUpButton mode="modal" forceRedirectUrl="/dashboard">
-                <button className="w-full glass rounded-xl border border-white/10 px-3 py-2 text-sm text-white hover:bg-white/10 transition">
+                <button className="w-full btn-primary">
                   Create Account
                 </button>
               </SignUpButton>
@@ -181,14 +160,11 @@ const Sidebar = () => {
 
         {/* Bottom Status */}
         <div className="mt-4 hidden md:block">
-          <div className="glass rounded-2xl border border-white/10 px-4 py-4">
-            <p className="text-xs text-slate-400">Security Level</p>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-4">
+            <p className="text-xs text-zinc-400">Security Level</p>
             <div className="flex items-center justify-between mt-2">
               <span className="text-white font-semibold">Operational</span>
-              <Lock size={14} className="text-slate-200" />
-            </div>
-            <div className="mt-3 h-1.5 rounded-full bg-white/5 overflow-hidden">
-              <div className="h-full w-full bg-gradient-to-r from-tracel-accent-blue/60 to-tracel-accent-purple/60" />
+              <span className="pill pill-live">Live</span>
             </div>
           </div>
         </div>
