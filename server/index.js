@@ -193,6 +193,28 @@ const aiStatus = {
     lastError: null,
 };
 
+function getAiRequestTimeoutMs(kind = 'health') {
+    const isHosted = isHostedEnvironment();
+    const envKey =
+        kind === 'report'
+            ? 'AI_REPORT_TIMEOUT_MS'
+            : kind === 'predict'
+              ? 'AI_PREDICT_TIMEOUT_MS'
+              : 'AI_HEALTH_TIMEOUT_MS';
+
+    const raw = String(process.env[envKey] || '').trim();
+    const parsed = parseInt(raw, 10);
+    if (Number.isFinite(parsed) && parsed > 0) return parsed;
+
+    // Render cold-starts commonly exceed a couple seconds.
+    if (isHosted) return kind === 'report' ? 20_000 : 15_000;
+    return kind === 'report' ? 5000 : 1500;
+}
+
+function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+}
+
 let lastAiStatusBroadcastOk = null;
 
 async function pollAiHealthOnce() {
@@ -234,7 +256,7 @@ async function pollAiHealthOnce() {
     }
 
     try {
-        const res = await axios.get(healthUrl, { timeout: 1500 });
+        const res = await axios.get(healthUrl, { timeout: getAiRequestTimeoutMs('health') });
         const ok = !!res?.data?.ok;
         const modelLoaded = typeof res?.data?.modelLoaded === 'boolean' ? res.data.modelLoaded : null;
         const thrRaw = res?.data?.threshold;
@@ -264,6 +286,15 @@ async function pollAiHealthOnce() {
         } catch {
             // best-effort
         }
+    }
+}
+
+async function warmupAiBestEffort({ attempts = 3 } = {}) {
+    // Fire a few spaced health checks so a sleeping Render service has time to boot.
+    for (let i = 0; i < attempts; i += 1) {
+        await pollAiHealthOnce().catch(() => void 0);
+        if (aiStatus.ok) return;
+        await sleep(1500);
     }
 }
 
@@ -982,7 +1013,7 @@ async function getThreatIntelReportFromHeaders(headers, { sinceHours = 24, limit
         u.searchParams.set('limit', String(limit));
         u.searchParams.set('ownerUserId', auth.ownerUserId);
 
-        const response = await axios.get(u.toString(), { timeout: 2500 });
+        const response = await axios.get(u.toString(), { timeout: getAiRequestTimeoutMs('report') });
         if (response?.data?.ok === false) {
             throw Object.assign(new Error(response?.data?.error || 'AI report failed'), { response });
         }
@@ -1014,7 +1045,7 @@ app.get('/api/session', (req, res) => {
     // Warm up AI on initial dashboard load. This helps with cold-starting the
     // separate ai-engine service (e.g., if it was idle) without blocking the UI.
     try {
-        pollAiHealthOnce().catch(() => void 0);
+        warmupAiBestEffort({ attempts: 4 }).catch(() => void 0);
     } catch {
         // best-effort
     }
