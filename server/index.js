@@ -430,9 +430,11 @@ function startOrGetOwnerStream(ownerUserId) {
         owner: ownerUserId,
         emitPacket: (packetData) => {
             const isAttackMode = !!entry.stream?.isAttackMode;
-            const score = packetData?.anomaly_score;
-            const aiScored = Number.isFinite(Number(score));
+            const rawScore = packetData?.anomaly_score;
+            const aiScored = rawScore !== null && rawScore !== undefined && rawScore !== '' && Number.isFinite(Number(rawScore));
+            const score = aiScored ? Number(rawScore) : null;
             packetData.ai_scored = aiScored;
+            packetData.anomaly_score = score;
 
             // Learning phase:
             // - Primary: learn on normal traffic only.
@@ -440,7 +442,7 @@ function startOrGetOwnerStream(ownerUserId) {
             //   allow the baseline to learn from packets that are clearly safe per the
             //   AI engine's calibrated threshold.
             if (!isAttackMode) {
-                entry.thresholdMgr.learn(score);
+                if (aiScored) entry.thresholdMgr.learn(score);
             } else if (aiScored && !entry.thresholdMgr.warmedUp && Number.isFinite(Number(aiStatus.threshold))) {
                 const s = Number(score);
                 const safeFloor = Number(aiStatus.threshold);
@@ -452,7 +454,7 @@ function startOrGetOwnerStream(ownerUserId) {
             // Detection phase: always active.
             // Primary: dynamic threshold once warmed up.
             // Fallback (pre-warmup): use AI engine's calibrated threshold if available.
-            let dynamicIsAnomaly = entry.thresholdMgr.isAnomaly(score);
+            let dynamicIsAnomaly = aiScored ? entry.thresholdMgr.isAnomaly(score) : false;
             const t = entry.thresholdMgr.snapshot();
 
             if (!dynamicIsAnomaly && aiScored && !t.warmedUp && Number.isFinite(Number(aiStatus.threshold))) {

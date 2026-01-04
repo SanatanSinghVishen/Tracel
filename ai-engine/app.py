@@ -708,6 +708,16 @@ def report_threat_intel():
                     elif s <= q_subtle:
                         subtle += 1
                 other = int(total - obvious - subtle)
+            else:
+                # If all scores are identical (or nearly identical), value-based
+                # thresholds collapse. Fall back to rank-based buckets.
+                n = len(s_sorted)
+                n_obvious = int(math.ceil(n * 0.20))
+                n_subtle = int(math.ceil(n * 0.40))
+                obvious = n_obvious
+                subtle = n_subtle
+                other = int(total - obvious - subtle)
+                thresholds = {'obviousLe': float(s_sorted[min(n_obvious - 1, n - 1)]), 'subtleLe': float(s_sorted[min(n_obvious + n_subtle - 1, n - 1)])}
 
         return jsonify(
             {
