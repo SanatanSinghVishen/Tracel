@@ -1,12 +1,15 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Database, Inbox, RefreshCcw } from 'lucide-react';
-import { SignedIn, SignedOut, SignInButton, useUser } from '@clerk/clerk-react';
+import { SignedIn, SignedOut, SignInButton, useAuth, useUser } from '@clerk/clerk-react';
 import { useSocket } from '../hooks/useSocket.js';
 import { getServerUrl } from '../lib/socket.js';
+import { buildAuthHeaders, getOrCreateAnonId } from '../lib/authClient.js';
 
 export default function ContactSubmissions() {
   const { user, isLoaded } = useUser();
+  const auth = useAuth();
   const { connection } = useSocket();
+  const anonId = useMemo(() => getOrCreateAnonId(), []);
 
   const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL || '').trim();
   const email =
@@ -39,7 +42,8 @@ export default function ContactSubmissions() {
 
     setLoading(true);
     try {
-      const res = await fetch(`${serverUrl}/api/contact?limit=100`, { credentials: 'include' });
+      const headers = await buildAuthHeaders(auth.isLoaded ? auth.getToken : null, anonId);
+      const res = await fetch(`${serverUrl}/api/contact?limit=100`, { headers, credentials: 'include' });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
         throw new Error(body?.error ? String(body.error) : `Request failed (HTTP ${res.status})`);
@@ -52,7 +56,7 @@ export default function ContactSubmissions() {
     } finally {
       setLoading(false);
     }
-  }, [serverUrl]);
+  }, [serverUrl, auth.isLoaded, auth.getToken, anonId]);
 
   useEffect(() => {
     if (isAdmin) refresh();

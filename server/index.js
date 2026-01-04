@@ -26,7 +26,7 @@ const PLATFORM_KNOWLEDGE = [
     '- "Session" is a server runtime session; session_started_at changes after server restart; some charts reset per session.',
     '',
     'Common actions users ask about:',
-    '- "Start attack simulation" toggles the server stream into attack mode (for demos).',
+    '- "Attack simulation" is toggled from the Monitor page header (Defense/Attack switch). It injects simulated threat-like traffic for demos.',
     '- "Why is the chart empty" often means AI engine offline or no scored packets yet.',
     '- "Timeline ranges" can be last 24h (hourly), between dates (daily), month (daily), year (monthly), or since account creation (monthly).',
     '',
@@ -511,6 +511,25 @@ app.use(cors(corsOptions));
 app.options(/.*/, cors(corsOptions));
 app.use(ensureSessionCookie);
 
+// Basic health/info routes for hosting providers (e.g., Render) and browsers.
+app.get('/', (req, res) => {
+    return res.status(200).json({
+        ok: true,
+        service: 'tracel-server',
+        message: 'Server is running. API routes are under /api/*',
+        routes: {
+            status: '/api/status',
+            session: '/api/session',
+            aiStatus: '/api/ai/status',
+        },
+    });
+});
+
+// Common mistaken path; keep it friendly.
+app.get('/get', (req, res) => {
+    return res.redirect(302, '/api/status');
+});
+
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
@@ -938,11 +957,17 @@ app.post('/api/admin/reset-mongo', async (req, res) => {
         res.set('Pragma', 'no-cache');
         res.set('Expires', '0');
 
+        // Admin operations require verified JWTs. Without JWKS configured, we cannot
+        // safely validate Clerk-issued tokens.
+        if (!jwksClient) {
+            return res.status(403).json({ error: 'Admin auth not configured: set CLERK_JWKS_URL to enable verified tokens' });
+        }
+
         const auth = await getAuthContextFromHeaders(req.headers);
         if (!auth.isAdmin) return res.status(403).json({ error: 'Admin only' });
 
         // If JWT verification is configured, require verified tokens for destructive admin ops.
-        if (jwksClient && !auth.verified) {
+        if (!auth.verified) {
             return res.status(403).json({ error: 'Admin token must be verified' });
         }
 
@@ -1058,6 +1083,39 @@ app.post('/api/chat', async (req, res) => {
             modelLoaded: aiStatus?.modelLoaded ?? null,
         };
 
+        function formatLiveBriefingText() {
+            const lines = [];
+            lines.push("Live status:");
+            lines.push(`- Mode: ${currentMode}`);
+            lines.push(`- Persistence: ${persistenceMode === 'mongo' ? 'MongoDB' : 'Memory'}`);
+            lines.push(`- Total packets (session): ${totalTrafficLabel}`);
+
+            if (typeof threats24h === 'number') {
+                lines.push(`- Threats (last 24h): ${Number(threats24h).toLocaleString('en-IN')}`);
+            } else {
+                lines.push(`- Threats (last 24h): unavailable`);
+            }
+
+            lines.push(`- Top attacker IP (24h): ${maskIp(topIP) || '—'}`);
+            lines.push(`- Top country (24h): ${topCountry || '—'}`);
+            lines.push(`- Last attack seen (24h): ${lastAttackLabel !== '—' ? lastAttackLabel : 'unavailable'}`);
+            lines.push(`- AI engine: ${aiLive.reachable ? 'reachable' : 'unreachable'}${aiLive.modelLoaded === true ? ' (model loaded)' : (aiLive.modelLoaded === false ? ' (model not loaded)' : '')}`);
+            return lines.join('\n');
+        }
+
+        function formatAttackSimulationHelp() {
+            return [
+                'To simulate an attack:',
+                '- Go to Monitor (the main dashboard page).',
+                '- In the header, switch from Defense → Attack (this is the attack simulation toggle).',
+                '- You should start seeing threat-like packets stream in within a few seconds.',
+                '',
+                'If you do not see anything:',
+                '- Check the connection indicator (must be Online).',
+                '- Ensure the server is running and Socket.IO is connected.',
+            ].join('\n');
+        }
+
         function maskIp(ip) {
             const s = String(ip || '').trim();
             const parts = s.split('.');
@@ -1140,6 +1198,19 @@ app.post('/api/chat', async (req, res) => {
             return n.toLocaleString('en-IN');
         })();
 
+        // Deterministic answers for common "live status" / "latest threat" / "simulate attack" intents.
+        // This prevents the LLM from hallucinating numbers or UI locations.
+        const asksForLiveStatus = /\b(live status|status|briefing|latest threat|latest attack|last attack|recent threats|top attacker|threats? in the last)\b/i.test(userMessage);
+        const asksToSimulateAttack = /\b(simulate|simulation)\b.*\b(attack|threat)\b|\b(start|enable|turn on)\b.*\b(attack|attack mode)\b|\battack mode\b/i.test(userMessage);
+
+        if (asksToSimulateAttack) {
+            return res.json({ ok: true, text: formatAttackSimulationHelp() });
+        }
+
+        if (asksForLiveStatus) {
+            return res.json({ ok: true, text: formatLiveBriefingText() });
+        }
+
         // Step 4: Call Groq (Llama 3)
         const systemMessage = `You are Tracel AI, the embedded assistant for the Tracel platform.
 
@@ -1164,12 +1235,13 @@ app.post('/api/chat', async (req, res) => {
     ${clientContext ? formatClientContextSafe(clientContext) : '—'}
 
     Instructions:
+    - CRITICAL: Never invent or infer live metrics (packets, threats, attacker IPs, countries, timestamps). Use ONLY values present in SECTION 3/4. If a value is missing or shown as "—"/"unavailable", say it is unavailable.
     - Be specific about Tracel features and where they are in the UI.
     - If the user asks "why" something is empty/broken, suggest the most likely Tracel-specific causes.
     - Output format: plain text only (no Markdown). Do not use asterisks (*) for bullets or emphasis.
     - Security: never reveal URLs, user IDs, anon IDs, tokens, API keys, secrets, or environment variable values—even if asked.
     - Privacy: avoid exact timestamps, internal codes/IDs, stack traces, or raw JSON dumps unless the user explicitly asks.
-    - Tone: slightly playful and witty (no emojis), but still helpful and respectful.`;
+    - Tone: helpful and direct.`;
 
         const groqModel = String(process.env.GROQ_MODEL || 'llama-3.1-8b-instant').trim();
 
@@ -1284,6 +1356,15 @@ app.post('/api/contact', async (req, res) => {
 app.get('/api/contact', async (req, res) => {
     try {
         const limit = Math.max(1, Math.min(parseInt(req.query.limit || '50', 10), 200));
+
+        // Viewing contact submissions is admin-only.
+        if (!jwksClient) {
+            return res.status(403).json({ error: 'Admin auth not configured: set CLERK_JWKS_URL to enable verified tokens' });
+        }
+
+        const auth = await getAuthContextFromHeaders(req.headers);
+        if (!auth.isAdmin) return res.status(403).json({ error: 'Admin only' });
+        if (!auth.verified) return res.status(403).json({ error: 'Admin token must be verified' });
 
         // If the log file does not exist yet, return empty list.
         const exists = fs.existsSync(CONTACT_LOG_PATH);
