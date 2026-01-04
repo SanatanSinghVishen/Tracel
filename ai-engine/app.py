@@ -344,7 +344,6 @@ def report_threat_intel():
             return jsonify({"ok": False, "error": err}), 503
 
         since_hours = request.args.get('sinceHours', '24')
-        limit = request.args.get('limit', '10000')
         owner_user_id = (request.args.get('ownerUserId') or '').strip()
 
         try:
@@ -352,45 +351,196 @@ def report_threat_intel():
         except Exception:
             since_hours = 24
 
-        try:
-            limit = max(1, min(int(limit), 50000))
-        except Exception:
-            limit = 10000
-
         # Use UTC datetimes for windowing; convert to naive for Mongo queries
         # (pymongo default is tz_aware=False).
         now = datetime.now(timezone.utc).replace(tzinfo=None)
         since = now - timedelta(hours=since_hours)
 
-        # Query only threats/anomalies. We do time window filtering in pandas to be
-        # resilient if timestamps are stored as strings instead of BSON Date.
-        mongo_filter = {
+        # Base filter: only anomalies.
+        base_match = {
             'is_anomaly': {'$in': [True, 1, 'true', 'True']},
         }
         if owner_user_id:
-            mongo_filter['owner_user_id'] = owner_user_id
+            base_match['owner_user_id'] = owner_user_id
 
-        cursor = (
-            coll.find(
-                mongo_filter,
-                {
-                    '_id': 0,
-                    'owner_user_id': 1,
-                    'source_ip': 1,
-                    'method': 1,
-                    'bytes': 1,
-                    'timestamp': 1,
-                    'anomaly_score': 1,
-                    'attack_vector': 1,
-                    'source_country': 1,
+        # Robust timestamp parsing: supports BSON Date and ISO-like strings.
+        # If conversion fails, ts becomes null and we drop it in the window match.
+        add_ts = {
+            '$addFields': {
+                'ts': {
+                    '$convert': {
+                        'input': '$timestamp',
+                        'to': 'date',
+                        'onError': None,
+                        'onNull': None,
+                    }
+                }
+            }
+        }
+        window_match = {
+            '$match': {
+                'ts': {
+                    '$gte': since,
+                    '$lt': now,
+                }
+            }
+        }
+
+        # Country derivation (matches the legacy deterministic mapping when explicit country is missing)
+        countries = [
+            'United States',
+            'Canada',
+            'Brazil',
+            'United Kingdom',
+            'Germany',
+            'Russia',
+            'China',
+            'Japan',
+            'Australia',
+            'South Africa',
+        ]
+
+        country_expr = {
+            '$let': {
+                'vars': {
+                    'explicit': {
+                        '$trim': {
+                            'input': {
+                                '$ifNull': ['$source_country', '']
+                            }
+                        }
+                    },
+                    'ipStr': {
+                        '$ifNull': ['$source_ip', '']
+                    },
                 },
+                'in': {
+                    '$cond': [
+                        {'$gt': [{'$strLenCP': '$$explicit'}, 0]},
+                        '$$explicit',
+                        {
+                            '$let': {
+                                'vars': {
+                                    'firstOctetStr': {
+                                        '$arrayElemAt': [
+                                            {'$split': ['$$ipStr', '.']},
+                                            0,
+                                        ]
+                                    }
+                                },
+                                'in': {
+                                    '$let': {
+                                        'vars': {
+                                            'firstInt': {
+                                                '$convert': {
+                                                    'input': '$$firstOctetStr',
+                                                    'to': 'int',
+                                                    'onError': 0,
+                                                    'onNull': 0,
+                                                }
+                                            }
+                                        },
+                                        'in': {
+                                            '$arrayElemAt': [
+                                                countries,
+                                                {
+                                                    '$mod': [
+                                                        {'$abs': '$$firstInt'},
+                                                        len(countries),
+                                                    ]
+                                                },
+                                            ]
+                                        },
+                                    }
+                                },
+                            }
+                        },
+                    ]
+                },
+            }
+        }
+
+        # Attack vector derivation (matches the legacy heuristic + respects explicit values)
+        vector_expr = {
+            '$let': {
+                'vars': {
+                    'explicit': {
+                        '$toLower': {
+                            '$trim': {
+                                'input': {
+                                    '$ifNull': ['$attack_vector', '']
+                                }
+                            }
+                        }
+                    },
+                    'm': {
+                        '$toUpper': {
+                            '$ifNull': ['$method', '']
+                        }
+                    },
+                    'b': {
+                        '$convert': {
+                            'input': '$bytes',
+                            'to': 'int',
+                            'onError': 0,
+                            'onNull': 0,
+                        }
+                    },
+                },
+                'in': {
+                    '$switch': {
+                        'branches': [
+                            {
+                                'case': {
+                                    '$regexMatch': {'input': '$$explicit', 'regex': r'^vol'}
+                                },
+                                'then': 'Volumetric',
+                            },
+                            {
+                                'case': {
+                                    '$regexMatch': {'input': '$$explicit', 'regex': r'^prot'}
+                                },
+                                'then': 'Protocol',
+                            },
+                            {
+                                'case': {
+                                    '$regexMatch': {'input': '$$explicit', 'regex': r'^app'}
+                                },
+                                'then': 'Application',
+                            },
+                        ],
+                        'default': {
+                            '$cond': [
+                                {'$gte': ['$$b', 7000]},
+                                'Volumetric',
+                                {
+                                    '$cond': [
+                                        {'$in': ['$$m', ['POST', 'PUT', 'PATCH', 'DELETE']]},
+                                        'Application',
+                                        'Protocol',
+                                    ]
+                                },
+                            ]
+                        },
+                    }
+                },
+            }
+        }
+
+        # Total threats (exact)
+        total_rows = list(
+            coll.aggregate(
+                [
+                    {'$match': base_match},
+                    add_ts,
+                    window_match,
+                    {'$count': 'count'},
+                ]
             )
-            .sort('timestamp', -1)
-            .limit(limit)
         )
+        total = int((total_rows[0]['count'] if total_rows else 0) or 0)
 
-        docs = list(cursor)
-        if not docs:
+        if total <= 0:
             return jsonify(
                 {
                     'ok': True,
@@ -419,153 +569,144 @@ def report_threat_intel():
                         {'bucket': 'Subtle', 'count': 0},
                         {'bucket': 'Other', 'count': 0},
                     ],
+                    'generatedBy': 'ai-engine (mongo aggregation)',
                 }
             )
 
-        df = pd.DataFrame(docs)
-
-        # Normalize missing columns
-        for col in ['source_ip', 'method', 'bytes', 'timestamp', 'anomaly_score', 'attack_vector', 'source_country']:
-            if col not in df.columns:
-                df[col] = None
-
-        df['source_ip'] = df['source_ip'].fillna('').astype(str)
-        df['method'] = df['method'].fillna('').astype(str)
-        df['bytes'] = pd.to_numeric(df['bytes'], errors='coerce').fillna(0).astype(int)
-        df['timestamp'] = pd.to_datetime(df['timestamp'], errors='coerce', utc=True)
-
-        # Apply time window (keep only rows within sinceHours)
-        since_utc = pd.Timestamp(since).tz_localize('UTC')
-        df = df[df['timestamp'].notna() & (df['timestamp'] >= since_utc)]
-
-        if df.empty:
-            return jsonify(
-                {
-                    'ok': True,
-                    'window': {
-                        'since': since.isoformat() + 'Z',
-                        'to': now.isoformat() + 'Z',
-                        'sinceHours': since_hours,
+        # Top hostile IPs (exact)
+        ip_rows = list(
+            coll.aggregate(
+                [
+                    {'$match': base_match},
+                    add_ts,
+                    window_match,
+                    {
+                        '$group': {
+                            '_id': {'$ifNull': ['$source_ip', '']},
+                            'count': {'$sum': 1},
+                            'lastSeen': {'$max': '$ts'},
+                        }
                     },
-                    'totalThreats': 0,
-                    'topHostileIps': [],
-                    'attackVectorDistribution': [
-                        {'name': 'Volumetric', 'value': 0},
-                        {'name': 'Protocol', 'value': 0},
-                        {'name': 'Application', 'value': 0},
-                    ],
-                    'geoTopCountries': [],
-                    'aiConfidenceDefinition': {
-                        'method': 'quantiles',
-                        'obvious': 'lowest ~20% anomaly scores (most suspicious)',
-                        'subtle': 'next ~40% anomaly scores',
-                        'other': 'remaining scores',
-                        'note': 'Buckets are relative to the selected time window.',
-                    },
-                    'aiConfidenceDistribution': [
-                        {'bucket': 'Obvious', 'count': 0},
-                        {'bucket': 'Subtle', 'count': 0},
-                        {'bucket': 'Other', 'count': 0},
-                    ],
-                    'generatedBy': 'ai-engine (python/pandas)',
-                }
+                    {'$sort': {'count': -1, 'lastSeen': -1}},
+                    {'$limit': 5},
+                ]
             )
-
-        # Attack vector: use explicit if present, else derived.
-        def _vector_row(row):
-            explicit = str(row.get('attack_vector') or '').strip()
-            if explicit:
-                v = explicit.lower()
-                if v.startswith('vol'):
-                    return 'Volumetric'
-                if v.startswith('prot'):
-                    return 'Protocol'
-                if v.startswith('app'):
-                    return 'Application'
-            return _classify_attack_vector(row.get('method'), row.get('bytes'))
-
-        df['vector'] = df.apply(_vector_row, axis=1)
-
-        # Country: use explicit if present, else deterministic IP mapping.
-        def _country_row(row):
-            explicit = str(row.get('source_country') or '').strip()
-            if explicit:
-                return explicit
-            return _ip_to_country_name(row.get('source_ip'))
-
-        df['country'] = df.apply(_country_row, axis=1)
-
-        # Top hostile IPs
-        ip_group = (
-            df.groupby('source_ip', dropna=False)
-            .agg(count=('source_ip', 'size'), lastSeen=('timestamp', 'max'))
-            .reset_index()
-            .sort_values(['count', 'lastSeen'], ascending=[False, False])
-            .head(5)
         )
         top_hostile = []
-        for _, r in ip_group.iterrows():
-            last_seen = r.get('lastSeen')
+        for r in ip_rows:
+            ip = str(r.get('_id') or '')
+            dt = r.get('lastSeen')
+            last_seen_iso = None
             try:
-                # pandas Timestamp -> python datetime
-                if pd.isna(last_seen):
-                    last_seen_iso = None
-                else:
-                    dt = pd.to_datetime(last_seen, utc=True).to_pydatetime()
-                    if getattr(dt, 'tzinfo', None) is not None:
-                        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+                if isinstance(dt, datetime):
                     last_seen_iso = dt.isoformat() + 'Z'
             except Exception:
                 last_seen_iso = None
             top_hostile.append(
                 {
-                    'ip': str(r.get('source_ip') or ''),
+                    'ip': ip,
                     'count': int(r.get('count') or 0),
                     'lastSeen': last_seen_iso,
                 }
             )
 
-        # Attack vector distribution
-        vector_counts = df['vector'].value_counts().to_dict()
+        # Attack vector distribution (exact)
+        vector_rows = list(
+            coll.aggregate(
+                [
+                    {'$match': base_match},
+                    add_ts,
+                    window_match,
+                    {'$addFields': {'vector': vector_expr}},
+                    {'$group': {'_id': '$vector', 'value': {'$sum': 1}}},
+                ]
+            )
+        )
+        vector_counts = {str(r.get('_id') or ''): int(r.get('value') or 0) for r in vector_rows}
         vector_dist = [
             {'name': 'Volumetric', 'value': int(vector_counts.get('Volumetric', 0))},
             {'name': 'Protocol', 'value': int(vector_counts.get('Protocol', 0))},
             {'name': 'Application', 'value': int(vector_counts.get('Application', 0))},
         ]
 
-        # Geo breakdown
-        total = int(len(df.index))
-        country_counts = df['country'].value_counts().reset_index().head(5)
-        # value_counts().reset_index() yields two columns: [<value>, <count>]
-        # Normalize to predictable names.
-        country_counts.columns = ['name', 'count']
+        # Geo breakdown (exact)
+        country_rows = list(
+            coll.aggregate(
+                [
+                    {'$match': base_match},
+                    add_ts,
+                    window_match,
+                    {'$addFields': {'country': country_expr}},
+                    {'$group': {'_id': '$country', 'count': {'$sum': 1}}},
+                    {'$sort': {'count': -1}},
+                    {'$limit': 5},
+                ]
+            )
+        )
         geo_top = []
-        for _, r in country_counts.iterrows():
+        for r in country_rows:
+            name = str(r.get('_id') or '')
             c = int(r.get('count') or 0)
             pct = round((c / total) * 100) if total > 0 else 0
-            geo_top.append({'name': str(r.get('name') or ''), 'count': c, 'pct': int(pct)})
+            geo_top.append({'name': name, 'count': c, 'pct': int(pct)})
 
-        # AI confidence distribution
-        # Note: anomaly_score scale depends on the underlying model and can be close to zero.
-        # Use relative (quantile-based) buckets to reflect the actual distribution in this window.
-        scores = pd.to_numeric(df['anomaly_score'], errors='coerce')
-        finite = scores.dropna()
+        # AI confidence distribution (exact quantiles over full window)
+        score_rows = coll.aggregate(
+            [
+                {'$match': base_match},
+                add_ts,
+                window_match,
+                {
+                    '$project': {
+                        '_id': 0,
+                        'anomaly_score': 1,
+                    }
+                },
+            ],
+            allowDiskUse=True,
+        )
+        scores = []
+        for r in score_rows:
+            s = r.get('anomaly_score')
+            try:
+                if s is None:
+                    continue
+                sf = float(s)
+                if math.isfinite(sf):
+                    scores.append(sf)
+            except Exception:
+                continue
 
         obvious = 0
         subtle = 0
         other = int(total)
         thresholds = {'obviousLe': None, 'subtleLe': None}
 
-        if not finite.empty:
-            s_min = float(finite.min())
-            s_max = float(finite.max())
-            if (s_max - s_min) >= 1e-9:
-                q_obvious = float(finite.quantile(0.20))
-                q_subtle = float(finite.quantile(0.60))
+        if scores:
+            s_sorted = sorted(scores)
+            if len(s_sorted) >= 2 and (s_sorted[-1] - s_sorted[0]) >= 1e-9:
+                # Match pandas' default quantile interpolation ('linear').
+                def _quantile(sorted_values, q: float) -> float:
+                    n = len(sorted_values)
+                    if n == 1:
+                        return float(sorted_values[0])
+                    pos = (n - 1) * q
+                    lo = int(math.floor(pos))
+                    hi = int(math.ceil(pos))
+                    if lo == hi:
+                        return float(sorted_values[lo])
+                    w = pos - lo
+                    return float(sorted_values[lo] * (1.0 - w) + sorted_values[hi] * w)
+
+                q_obvious = _quantile(s_sorted, 0.20)
+                q_subtle = _quantile(s_sorted, 0.60)
                 thresholds = {'obviousLe': q_obvious, 'subtleLe': q_subtle}
 
-                obvious = int((scores <= q_obvious).sum())
-                subtle = int(((scores > q_obvious) & (scores <= q_subtle)).sum())
+                for s in scores:
+                    if s <= q_obvious:
+                        obvious += 1
+                    elif s <= q_subtle:
+                        subtle += 1
                 other = int(total - obvious - subtle)
 
         return jsonify(
@@ -593,7 +734,7 @@ def report_threat_intel():
                     {'bucket': 'Subtle', 'count': subtle},
                     {'bucket': 'Other', 'count': other},
                 ],
-                'generatedBy': 'ai-engine (python/pandas)',
+                'generatedBy': 'ai-engine (mongo aggregation)',
             }
         )
     except Exception as e:
