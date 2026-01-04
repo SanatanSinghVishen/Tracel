@@ -914,6 +914,14 @@ async function getThreatIntelReportFromHeaders(headers, { sinceHours = 24, limit
 // GET /api/session
 // Used by the dashboard to ensure the browser has a cookie before opening Socket.IO.
 app.get('/api/session', (req, res) => {
+    // Warm up AI on initial dashboard load. This helps with cold-starting the
+    // separate ai-engine service (e.g., if it was idle) without blocking the UI.
+    try {
+        pollAiHealthOnce().catch(() => void 0);
+    } catch {
+        // best-effort
+    }
+
     const sid = getSessionIdFromHeaders(req.headers);
     return res.json({ ok: true, session: sid ? `sess:${sid}` : null });
 });
@@ -929,6 +937,13 @@ app.get('/api/status', async (req, res) => {
 
         const sid = getSessionIdFromHeaders(req.headers);
         const auth = await getAuthContextFromHeaders(req.headers);
+
+        const aiConfigured = !!(
+            String(process.env.AI_ENGINE_URL || '').trim()
+            || String(process.env.AI_PREDICT_URL || '').trim()
+            || String(process.env.AI_HEALTH_URL || '').trim()
+        );
+
         return res.json({
             ok: true,
             session: sid ? `sess:${sid}` : null,
@@ -941,6 +956,11 @@ app.get('/api/status', async (req, res) => {
             persistence: {
                 mongoUrlConfigured: !!mongoUrl,
                 mongoConnected: mongoose.connection.readyState === 1,
+            },
+            ai: {
+                disabled: isAiDisabled(),
+                configured: aiConfigured,
+                status: { ...aiStatus },
             },
         });
     } catch (e) {
