@@ -898,6 +898,32 @@ function isMongoConnected() {
     return !!mongoUrl && mongoose.connection.readyState === 1;
 }
 
+function waitForMongoConnected(timeoutMs = 25_000) {
+    if (!mongoUrl) return Promise.resolve(false);
+    if (mongoose.connection.readyState === 1) return Promise.resolve(true);
+
+    return new Promise((resolve) => {
+        let done = false;
+
+        const finish = (ok) => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            try {
+                mongoose.connection.removeListener('connected', onConnected);
+            } catch {
+                // best-effort
+            }
+            resolve(!!ok);
+        };
+
+        const onConnected = () => finish(true);
+        const timer = setTimeout(() => finish(false), Math.max(0, timeoutMs));
+
+        mongoose.connection.on('connected', onConnected);
+    });
+}
+
 function safeDate(value) {
     if (!value) return null;
     const d = new Date(value);
@@ -2053,19 +2079,27 @@ app.get('/api/threat-intel', async (req, res) => {
         if (!Number.isFinite(sinceHours)) sinceHours = 24;
         sinceHours = Math.max(1, Math.min(sinceHours, 168));
 
-        // Core logic: when Mongo is connected, compute the entire report from Mongo.
-        // This keeps last-24h detail correct across restarts and avoids AI cold starts.
-        if (isMongoConnected()) {
-            const auth = await getAuthContextFromHeaders(req.headers);
-            const to = new Date();
-            const from = new Date(to.getTime() - sinceHours * 60 * 60 * 1000);
-            const report = await computeThreatIntelFromMongo({
-                ownerUserId: auth.ownerUserId,
-                since: from,
-                to,
-                limit,
-            });
-            return res.json(report);
+        // Core logic: if Mongo is configured, prefer Mongo for the entire report.
+        // Also wait briefly during startup so the first client load doesn't hit a transient 503.
+        if (mongoUrl) {
+            await waitForMongoConnected(25_000);
+            if (isMongoConnected()) {
+                const auth = await getAuthContextFromHeaders(req.headers);
+                const to = new Date();
+                const from = new Date(to.getTime() - sinceHours * 60 * 60 * 1000);
+                const report = await computeThreatIntelFromMongo({
+                    ownerUserId: auth.ownerUserId,
+                    since: from,
+                    to,
+                    limit,
+                });
+                return res.json(report);
+            }
+
+            // Mongo is configured but still not connected (cold start / network).
+            // Return 503 so clients can retry.
+            res.set('Retry-After', '3');
+            return res.status(503).json({ ok: false, error: 'MongoDB is still connecting; retry shortly' });
         }
 
         const report = await getThreatIntelReportFromHeaders(req.headers, { sinceHours: String(sinceHours), limit });
