@@ -981,14 +981,28 @@ function computeThreatIntelFromPackets(packets) {
         const countries = [
             'United States',
             'Canada',
+            'Mexico',
             'Brazil',
+            'Argentina',
             'United Kingdom',
+            'France',
             'Germany',
+            'Spain',
+            'Italy',
+            'Netherlands',
+            'Sweden',
+            'Poland',
+            'Turkey',
             'Russia',
+            'India',
             'China',
             'Japan',
+            'South Korea',
+            'Singapore',
             'Australia',
+            'New Zealand',
             'South Africa',
+            'Nigeria',
         ];
 
         const s = typeof ip === 'string' ? ip.trim() : '';
