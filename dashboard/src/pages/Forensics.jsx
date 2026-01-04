@@ -363,6 +363,18 @@ export default function Forensics() {
     return u.toString();
   }, [baseUrl]);
 
+  async function fetchThreatIntelWithRetry(url, options) {
+    const attempts = 3;
+    for (let i = 0; i < attempts; i += 1) {
+      const res = await fetch(url, options);
+      // Render/hosting redeploys can briefly return 503; retry with a small backoff.
+      if (res.status !== 503 || i === attempts - 1) return res;
+      // eslint-disable-next-line no-await-in-loop
+      await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+    }
+    return fetch(url, options);
+  }
+
   const loadThreatIntel = useCallback(async () => {
     if (!isLoaded) return;
 
@@ -371,7 +383,7 @@ export default function Forensics() {
 
     try {
       const headers = await buildAuthHeaders(isLoaded ? getToken : null, anonId);
-      const res = await fetch(intelUrl, { headers, credentials: 'include', cache: 'no-store' });
+      const res = await fetchThreatIntelWithRetry(intelUrl, { headers, credentials: 'include', cache: 'no-store' });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok || data?.ok === false) {

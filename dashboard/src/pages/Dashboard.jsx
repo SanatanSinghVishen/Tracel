@@ -45,10 +45,21 @@ export default function Dashboard() {
         intelUrl.searchParams.set('sinceHours', '24');
         intelUrl.searchParams.set('limit', '10000');
 
+        async function fetchIntelWithRetry(url, options) {
+          const attempts = 3;
+          for (let i = 0; i < attempts; i += 1) {
+            const res = await fetch(url, options);
+            if (res.status !== 503 || i === attempts - 1) return res;
+            // eslint-disable-next-line no-await-in-loop
+            await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+          }
+          return fetch(url, options);
+        }
+
         const headers = await buildAuthHeaders(isLoaded ? getToken : null, anonId);
         const [res, intelRes] = await Promise.all([
           fetch(u.toString(), { headers, credentials: 'include', cache: 'no-store' }),
-          fetch(intelUrl.toString(), { headers, credentials: 'include', cache: 'no-store' }),
+          fetchIntelWithRetry(intelUrl.toString(), { headers, credentials: 'include', cache: 'no-store' }),
         ]);
 
         const data = await res.json().catch(() => ({}));
