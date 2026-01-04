@@ -40,6 +40,12 @@ export default function TrafficGlobe() {
   const { socket } = useSocket();
   const globeRef = useRef(null);
 
+  const povRef = useRef({
+    lat: SERVER_LOCATION.lat,
+    lng: SERVER_LOCATION.lng,
+    altitude: 2.6,
+  });
+
   const containerRef = useRef(null);
   const { width, height } = useElementSize(containerRef);
 
@@ -68,15 +74,40 @@ export default function TrafficGlobe() {
     []
   );
 
-  useEffect(() => {
+  const setPov = useCallback((next, ms = 650) => {
     const g = globeRef.current;
     if (!g) return;
+    const current = povRef.current;
+    const lat = Number.isFinite(next?.lat) ? next.lat : current.lat;
+    const lng = Number.isFinite(next?.lng) ? next.lng : current.lng;
+    const altitude = Number.isFinite(next?.altitude) ? next.altitude : current.altitude;
+    povRef.current = { lat, lng, altitude };
     try {
-      g.pointOfView({ lat: SERVER_LOCATION.lat, lng: SERVER_LOCATION.lng, altitude: 2.1 }, 800);
+      g.pointOfView({ lat, lng, altitude }, ms);
     } catch {
       // ignore
     }
   }, []);
+
+  const zoomBy = useCallback(
+    (delta) => {
+      const current = povRef.current;
+      const nextAltitude = Math.max(1.6, Math.min(3.4, current.altitude + delta));
+      setPov({ altitude: nextAltitude }, 220);
+    },
+    [setPov]
+  );
+
+  useEffect(() => {
+    const g = globeRef.current;
+    if (!g) return;
+    try {
+      // Keep the whole globe comfortably visible within the tile.
+      setPov({ lat: SERVER_LOCATION.lat, lng: SERVER_LOCATION.lng, altitude: povRef.current.altitude }, 800);
+    } catch {
+      // ignore
+    }
+  }, [setPov]);
 
   useEffect(() => {
     const g = globeRef.current;
@@ -99,6 +130,10 @@ export default function TrafficGlobe() {
     try {
       const controls = g.controls?.();
       if (!controls) return;
+      // Keep the whole globe comfortably visible; users shouldn't need to zoom/pan.
+      controls.enableZoom = false;
+      controls.enablePan = false;
+      controls.enableRotate = true;
       controls.autoRotate = attackActive;
       controls.autoRotateSpeed = attackActive ? 1.15 : 0.3;
     } catch {
@@ -165,11 +200,7 @@ export default function TrafficGlobe() {
 
         const p = points[idx];
         if (p && Number.isFinite(p.lat) && Number.isFinite(p.lng)) {
-          try {
-            g.pointOfView({ lat: p.lat, lng: p.lng, altitude: 1.7 }, 750);
-          } catch {
-            // ignore
-          }
+          setPov({ lat: p.lat, lng: p.lng }, 750);
         }
 
         attackFocusTimerRef.current = setTimeout(tick, 900);
@@ -187,11 +218,7 @@ export default function TrafficGlobe() {
 
       const g = globeRef.current;
       if (g) {
-        try {
-          g.pointOfView({ lat: SERVER_LOCATION.lat, lng: SERVER_LOCATION.lng, altitude: 2.1 }, 900);
-        } catch {
-          // ignore
-        }
+        setPov({ lat: SERVER_LOCATION.lat, lng: SERVER_LOCATION.lng }, 900);
       }
     }
 
@@ -342,15 +369,38 @@ export default function TrafficGlobe() {
   }, [userLocation, threatPoints, cyberColors.safe, cyberColors.threat]);
 
   return (
-    <div ref={containerRef} className="relative w-full h-full min-h-[320px]">
+    <div ref={containerRef} className="relative w-full h-full min-h-0">
+      <div className="absolute right-3 top-3 z-10">
+        <div className="flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 p-1">
+          <button
+            type="button"
+            onClick={() => zoomBy(+0.25)}
+            className="h-8 w-8 rounded-md border border-zinc-800 bg-zinc-900 text-slate-200 hover:bg-zinc-800 transition"
+            aria-label="Zoom in"
+            title="Zoom in"
+          >
+            +
+          </button>
+          <button
+            type="button"
+            onClick={() => zoomBy(-0.25)}
+            className="h-8 w-8 rounded-md border border-zinc-800 bg-zinc-900 text-slate-200 hover:bg-zinc-800 transition"
+            aria-label="Zoom out"
+            title="Zoom out"
+          >
+            −
+          </button>
+        </div>
+      </div>
+
       {!userLocation && (
         <div className="absolute left-3 top-3 z-10 max-w-[90%]">
-          <div className="glass rounded-2xl border border-white/10 px-3 py-2">
+          <div className="glass rounded-lg px-3 py-2">
             <div className="flex items-center gap-2">
               <button
                 type="button"
                 onClick={requestUserLocation}
-                className="px-3 py-1.5 text-[11px] font-semibold rounded-xl glass border border-white/10 text-slate-100 hover:bg-white/10"
+                className="px-3 py-1.5 text-[11px] font-semibold rounded-md glass text-slate-100 hover:bg-zinc-800 transition"
               >
                 Enable Location
               </button>
