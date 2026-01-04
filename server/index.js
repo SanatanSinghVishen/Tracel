@@ -73,6 +73,8 @@ const log = require('./logger');
 
 const { MemoryStore } = require('./memory_store');
 
+const { createThreatLog } = require('./threat_log');
+
 const { createTrafficStream } = require('./traffic_simulator');
 
 // Retry AI calls during Render cold starts.
@@ -374,6 +376,30 @@ pollAiHealthOnce().catch(() => void 0);
 const memoryStore = new MemoryStore({
     maxPerOwner: Math.max(100, Math.min(parseInt(process.env.MEMORY_MAX_PACKETS || '5000', 10), 50_000))
 });
+
+// Disk-backed anomaly history for last-N-hours.
+// Only used when MongoDB persistence is not configured (or when explicitly enabled).
+// If MongoDB is always available, keeping this disabled avoids extra file I/O.
+const threatLogEnabled = (() => {
+    const raw = String(process.env.THREAT_LOG_ENABLED || '').trim().toLowerCase();
+    if (raw === '1' || raw === 'true' || raw === 'yes') return true;
+    // Auto-enable only when Mongo isn't configured.
+    const mongoConfigured = !!String(process.env.MONGO_URL || '').trim();
+    return !mongoConfigured;
+})();
+
+const threatLog = threatLogEnabled
+    ? createThreatLog({
+        filePath: process.env.THREAT_LOG_PATH,
+        retentionHours: process.env.THREAT_LOG_RETENTION_HOURS,
+        log,
+    })
+    : null;
+
+if (threatLog) {
+    threatLog.hydrateInto(memoryStore).catch(() => void 0);
+    threatLog.startCompactionInterval();
+}
 
 // Persist per-user/session simulation preferences in-memory.
 // This keeps behavior stable across refreshes/page changes.
@@ -853,6 +879,15 @@ function persistPacket(packetData) {
         // Best-effort only.
     }
 
+    // Persist threat events to disk only when disk logging is enabled.
+    if (threatLog) {
+        try {
+            threatLog.appendThreat(packetData);
+        } catch {
+            // Best-effort only.
+        }
+    }
+
     // Persist to Mongo only if configured and connected. Avoid buffering.
     if (!mongoUrl) return;
     if (mongoose.connection.readyState !== 1) return;
@@ -1059,6 +1094,245 @@ function bucketKeyUtc(date, bucket) {
     return d.toISOString().slice(0, 7) + '-01T00:00:00.000Z';
 }
 
+function quantileLinear(sortedValues, q) {
+    const values = Array.isArray(sortedValues) ? sortedValues : [];
+    if (!values.length) return null;
+    const qq = Math.max(0, Math.min(1, Number(q)));
+    if (!Number.isFinite(qq)) return null;
+    if (values.length === 1) return values[0];
+
+    const pos = (values.length - 1) * qq;
+    const base = Math.floor(pos);
+    const rest = pos - base;
+    const left = values[base];
+    const right = values[Math.min(base + 1, values.length - 1)];
+    return left + rest * (right - left);
+}
+
+async function computeThreatIntelFromMongo({ ownerUserId, since, to, limit }) {
+    const effectiveLimit = Math.max(1000, Math.min(parseInt(String(limit || 10000), 10), 50_000));
+    const from = since instanceof Date ? since : new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const until = to instanceof Date ? to : new Date();
+
+    const baseMatch = {
+        owner_user_id: ownerUserId,
+        is_anomaly: true,
+        timestamp: { $gte: from, $lt: until },
+    };
+
+    const countries = [
+        'United States',
+        'Canada',
+        'Brazil',
+        'United Kingdom',
+        'Germany',
+        'Russia',
+        'China',
+        'Japan',
+        'Australia',
+        'South Africa',
+    ];
+
+    // Vector derivation: respects explicit values (attack_vector) and otherwise
+    // matches the heuristic used across the app.
+    const vectorExpr = {
+        $let: {
+            vars: {
+                explicit: { $toLower: { $trim: { input: { $ifNull: ['$attack_vector', ''] } } } },
+                m: { $toUpper: { $ifNull: ['$method', ''] } },
+                b: { $convert: { input: '$bytes', to: 'int', onError: 0, onNull: 0 } },
+            },
+            in: {
+                $switch: {
+                    branches: [
+                        { case: { $regexMatch: { input: '$$explicit', regex: '^vol' } }, then: 'Volumetric' },
+                        { case: { $regexMatch: { input: '$$explicit', regex: '^prot' } }, then: 'Protocol' },
+                        { case: { $regexMatch: { input: '$$explicit', regex: '^app' } }, then: 'Application' },
+                    ],
+                    default: {
+                        $cond: [
+                            { $gte: ['$$b', 4000] },
+                            'Volumetric',
+                            {
+                                $cond: [
+                                    { $in: ['$$m', ['POST', 'PUT', 'PATCH', 'DELETE']] },
+                                    'Application',
+                                    'Protocol',
+                                ],
+                            },
+                        ],
+                    },
+                },
+            },
+        },
+    };
+
+    const countryExpr = {
+        $let: {
+            vars: {
+                explicit: { $trim: { input: { $ifNull: ['$source_country', ''] } } },
+                ipStr: { $ifNull: ['$source_ip', ''] },
+            },
+            in: {
+                $cond: [
+                    { $gt: [{ $strLenCP: '$$explicit' }, 0] },
+                    '$$explicit',
+                    {
+                        $let: {
+                            vars: {
+                                firstOctetStr: { $arrayElemAt: [{ $split: ['$$ipStr', '.'] }, 0] },
+                            },
+                            in: {
+                                $let: {
+                                    vars: {
+                                        firstInt: {
+                                            $convert: {
+                                                input: '$$firstOctetStr',
+                                                to: 'int',
+                                                onError: 0,
+                                                onNull: 0,
+                                            },
+                                        },
+                                    },
+                                    in: {
+                                        $arrayElemAt: [
+                                            countries,
+                                            { $mod: [{ $abs: '$$firstInt' }, countries.length] },
+                                        ],
+                                    },
+                                },
+                            },
+                        },
+                    },
+                ],
+            },
+        },
+    };
+
+    const [totalThreats, topHostileIps, attackVectorDistribution, geoTopCountries] = await Promise.all([
+        Packet.countDocuments(baseMatch),
+        Packet.aggregate([
+            { $match: baseMatch },
+            {
+                $group: {
+                    _id: { $ifNull: ['$source_ip', ''] },
+                    count: { $sum: 1 },
+                    lastSeen: { $max: '$timestamp' },
+                },
+            },
+            { $match: { _id: { $ne: '' } } },
+            { $sort: { count: -1, lastSeen: -1 } },
+            { $limit: 8 },
+            {
+                $project: {
+                    _id: 0,
+                    ip: '$_id',
+                    count: 1,
+                    lastSeen: {
+                        $cond: [
+                            { $ifNull: ['$lastSeen', false] },
+                            { $dateToString: { date: '$lastSeen', format: '%Y-%m-%dT%H:%M:%S.%LZ', timezone: 'UTC' } },
+                            null,
+                        ],
+                    },
+                },
+            },
+        ]),
+        (async () => {
+            const rows = await Packet.aggregate([
+                { $match: baseMatch },
+                { $addFields: { vector: vectorExpr } },
+                { $group: { _id: '$vector', value: { $sum: 1 } } },
+            ]);
+
+            const map = new Map((rows || []).map((r) => [String(r._id || ''), Number(r.value || 0)]));
+            return [
+                { name: 'Volumetric', value: map.get('Volumetric') || 0 },
+                { name: 'Protocol', value: map.get('Protocol') || 0 },
+                { name: 'Application', value: map.get('Application') || 0 },
+            ];
+        })(),
+        (async () => {
+            const rows = await Packet.aggregate([
+                { $match: baseMatch },
+                { $addFields: { country: countryExpr } },
+                { $group: { _id: '$country', count: { $sum: 1 } } },
+                { $sort: { count: -1 } },
+                { $limit: 5 },
+            ]);
+
+            return (rows || []).map((r) => {
+                const count = Number(r.count || 0);
+                const pct = totalThreats > 0 ? Math.round((count / totalThreats) * 100) : 0;
+                return { name: String(r._id || ''), count, pct };
+            });
+        })(),
+    ]);
+
+    // Confidence distribution: quantile-based over anomaly_score for the same window.
+    // Lower score = more suspicious.
+    const scoreDocs = await Packet.find(baseMatch)
+        .sort({ timestamp: -1 })
+        .limit(effectiveLimit)
+        .select({ anomaly_score: 1 })
+        .lean();
+
+    const scores = [];
+    for (const d of scoreDocs || []) {
+        const s = Number(d?.anomaly_score);
+        if (Number.isFinite(s)) scores.push(s);
+    }
+
+    let obvious = 0;
+    let subtle = 0;
+    let other = Number(totalThreats || 0);
+    let thresholds = { obviousLe: null, subtleLe: null };
+
+    if (scores.length) {
+        const sorted = scores.slice().sort((a, b) => a - b);
+        const qObvious = quantileLinear(sorted, 0.20);
+        const qSubtle = quantileLinear(sorted, 0.60);
+        thresholds = { obviousLe: qObvious, subtleLe: qSubtle };
+
+        for (const s of scores) {
+            if (qObvious !== null && s <= qObvious) obvious += 1;
+            else if (qSubtle !== null && s <= qSubtle) subtle += 1;
+        }
+        other = Math.max(0, Number(totalThreats || 0) - obvious - subtle);
+    }
+
+    const aiConfidenceDistribution = [
+        { bucket: 'Obvious', count: obvious },
+        { bucket: 'Subtle', count: subtle },
+        { bucket: 'Other', count: other },
+    ];
+
+    return {
+        ok: true,
+        degraded: false,
+        source: 'mongo',
+        generatedAt: new Date().toISOString(),
+        window: {
+            since: from.toISOString(),
+            to: until.toISOString(),
+            sinceHours: Math.max(1, Math.min(parseInt(String((until.getTime() - from.getTime()) / (60 * 60 * 1000)), 10) || 24, 168)),
+        },
+        totalThreats: Number(totalThreats || 0),
+        topHostileIps: Array.isArray(topHostileIps) ? topHostileIps : [],
+        attackVectorDistribution,
+        geoTopCountries,
+        aiConfidenceDefinition: {
+            method: 'quantiles',
+            obvious: 'lowest ~20% anomaly scores (most suspicious)',
+            subtle: 'next ~40% anomaly scores',
+            other: 'remaining scores',
+            note: 'Buckets are relative to the selected time window.',
+        },
+        aiConfidenceDistribution,
+        aiConfidenceThresholds: thresholds,
+    };
+}
+
 async function getThreatIntelReportFromHeaders(headers, { sinceHours = 24, limit = 10000 } = {}) {
     try {
         const reportBase = getAiBaseUrl();
@@ -1078,13 +1352,40 @@ async function getThreatIntelReportFromHeaders(headers, { sinceHours = 24, limit
 
         return response.data;
     } catch {
-        // Fallback: compute from in-memory packets to keep results consistent and available.
+        // Fallback: if Mongo is available, compute directly from Mongo so the
+        // report is stable across server restarts and doesn't depend on AI uptime.
         const auth = await getAuthContextFromHeaders(headers);
         const hrs = Math.max(1, Math.min(parseInt(String(sinceHours || 24), 10), 168));
         const cutoff = new Date(Date.now() - hrs * 60 * 60 * 1000);
+        const effectiveLimit = Math.max(1000, Math.min(parseInt(String(limit || 10000), 10), 50_000));
 
+        if (isMongoConnected()) {
+            try {
+                const mongoFilter = {
+                    owner_user_id: auth.ownerUserId,
+                    is_anomaly: true,
+                    timestamp: { $gte: cutoff },
+                };
+                const packets = await Packet.find(mongoFilter)
+                    .sort({ timestamp: -1 })
+                    .limit(effectiveLimit)
+                    .select('-__v')
+                    .lean();
+
+                const report = computeThreatIntelFromPackets(packets);
+                report.degraded = true;
+                report.source = 'mongo';
+                report.aiConfidenceDefinition =
+                    'Heuristic confidence computed server-side from MongoDB (AI report service unavailable).';
+                return report;
+            } catch {
+                // Fall back further to memory.
+            }
+        }
+
+        // Memory fallback: compute from recent in-memory packets.
         const filter = {
-            limit: Math.max(1000, Math.min(parseInt(String(limit || 10000), 10), 50_000)),
+            limit: effectiveLimit,
             owner_user_id: auth.ownerUserId,
             is_anomaly: true,
             source_ip: null,
@@ -1751,6 +2052,21 @@ app.get('/api/threat-intel', async (req, res) => {
         let sinceHours = parseInt(String(sinceHoursRaw), 10);
         if (!Number.isFinite(sinceHours)) sinceHours = 24;
         sinceHours = Math.max(1, Math.min(sinceHours, 168));
+
+        // Core logic: when Mongo is connected, compute the entire report from Mongo.
+        // This keeps last-24h detail correct across restarts and avoids AI cold starts.
+        if (isMongoConnected()) {
+            const auth = await getAuthContextFromHeaders(req.headers);
+            const to = new Date();
+            const from = new Date(to.getTime() - sinceHours * 60 * 60 * 1000);
+            const report = await computeThreatIntelFromMongo({
+                ownerUserId: auth.ownerUserId,
+                since: from,
+                to,
+                limit,
+            });
+            return res.json(report);
+        }
 
         const report = await getThreatIntelReportFromHeaders(req.headers, { sinceHours: String(sinceHours), limit });
 

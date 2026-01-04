@@ -54,7 +54,7 @@ class MemoryStore {
   query(owner, query = {}) {
     const list = this._list(owner);
 
-    const limit = clampInt(query.limit, 1, 1000, 200);
+    const limit = clampInt(query.limit, 1, this.maxPerOwner, 200);
     const anomaly = query.anomaly === '1' || query.anomaly === 'true' || query.anomaly === true;
 
     const ip = typeof query.ip === 'string' ? query.ip.trim() : '';
