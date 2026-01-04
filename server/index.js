@@ -64,6 +64,8 @@ async function getGroqClient() {
 const mongoose = require('mongoose');
 const Packet = require('./models/Packet');
 const axios = require('axios');
+const axiosRetryPkg = require('axios-retry');
+const axiosRetry = axiosRetryPkg?.default || axiosRetryPkg;
 const jwt = require('jsonwebtoken');
 const jwksRsa = require('jwks-rsa');
 
@@ -72,6 +74,24 @@ const log = require('./logger');
 const { MemoryStore } = require('./memory_store');
 
 const { createTrafficStream } = require('./traffic_simulator');
+
+// Retry AI calls during Render cold starts.
+try {
+    axiosRetry(axios, {
+        retries: 3,
+        retryDelay: axiosRetry.exponentialDelay,
+        retryCondition: (error) => {
+            const status = error?.response?.status;
+            return (
+                axiosRetry.isNetworkOrIdempotentRequestError(error)
+                || error?.code === 'ECONNABORTED'
+                || (typeof status === 'number' && status >= 500)
+            );
+        },
+    });
+} catch {
+    // best-effort
+}
 
 function isAiDisabled() {
     const raw = String(process.env.AI_DISABLED || process.env.DISABLE_AI || '').trim().toLowerCase();
@@ -306,6 +326,44 @@ function getAiBaseUrl() {
     if (base) return String(base).replace(/\/predict\/?$/i, '');
 
     return isHostedEnvironment() ? null : 'http://127.0.0.1:5000';
+}
+
+function getAiServiceUrl() {
+    // Preferred for the wake-up chain: base origin of the AI service.
+    // Keep compatibility with existing AI_ENGINE_URL/AI_PREDICT_URL setup.
+    const raw = String(process.env.AI_SERVICE_URL || '').trim();
+    if (raw) {
+        try {
+            // Normalize to origin (strip any path).
+            return new URL(raw).origin;
+        } catch {
+            return raw;
+        }
+    }
+    return getAiBaseUrl();
+}
+
+async function wakeUpAIService() {
+    // Best-effort wake-up ping: should not trigger heavy ML work.
+    try {
+        if (isAiDisabled()) return;
+        const base = getAiServiceUrl();
+        if (!base) return;
+        const u = new URL('/health', base);
+        await axios.get(u.toString(), { timeout: getAiRequestTimeoutMs('health') });
+    } catch {
+        // best-effort only
+    }
+}
+
+function startAiKeepAlive() {
+    // Render sleeps after ~15 minutes of inactivity; ping at 14 minutes.
+    if (isAiDisabled()) return;
+    const base = getAiServiceUrl();
+    if (!base) return;
+    setInterval(() => {
+        wakeUpAIService().catch(() => void 0);
+    }, 14 * 60 * 1000);
 }
 
 setInterval(() => {
@@ -1669,6 +1727,10 @@ const PORT = (() => {
 })();
 server.listen(PORT, '0.0.0.0', () => {
     log.info(`Server running on port ${PORT}`);
+
+    // Wake-up chain: as soon as Node boots, ping the AI service so it starts.
+    wakeUpAIService().catch(() => void 0);
+    startAiKeepAlive();
 });
 
 // --- REST API (Threat Intel Report via Python) ---

@@ -144,13 +144,15 @@ def ensure_model_loaded():
 
 @app.route('/health', methods=['GET'])
 def health():
-    # Health here means the service is up; model may load later (lazy).
-    # If called with ?load=1, we force a model load so callers can fail fast.
+    # Lightweight health endpoint for cold-start wake pings.
+    # - GET /health -> fast response, does NOT force model load.
+    # - GET /health?load=1 -> detailed health, forces model load (used by backend diagnostics).
     force_load = request.args.get('load') == '1'
-    loaded_model = model
-    loaded_error = model_error
-    if force_load:
-        loaded_model, loaded_error = ensure_model_loaded()
+
+    if not force_load:
+        return jsonify({"status": "running"}), 200
+
+    loaded_model, loaded_error = ensure_model_loaded()
 
     threshold = None
     model_type = None
@@ -170,7 +172,7 @@ def health():
     }
 
     # If the caller asked for a forced load and it failed, surface that via status.
-    if force_load and loaded_model is None:
+    if loaded_model is None:
         return jsonify(payload), 503
     return jsonify(payload), 200
 
