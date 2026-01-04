@@ -1650,10 +1650,35 @@ app.get('/api/threat-intel', async (req, res) => {
         res.set('Pragma', 'no-cache');
         res.set('Expires', '0');
 
-        const sinceHours = typeof req.query.sinceHours === 'string' ? req.query.sinceHours : '24';
+        const sinceHoursRaw = typeof req.query.sinceHours === 'string' ? req.query.sinceHours : '24';
         const limit = typeof req.query.limit === 'string' ? req.query.limit : '10000';
 
-        const report = await getThreatIntelReportFromHeaders(req.headers, { sinceHours, limit });
+        let sinceHours = parseInt(String(sinceHoursRaw), 10);
+        if (!Number.isFinite(sinceHours)) sinceHours = 24;
+        sinceHours = Math.max(1, Math.min(sinceHours, 168));
+
+        const report = await getThreatIntelReportFromHeaders(req.headers, { sinceHours: String(sinceHours), limit });
+
+        // Keep Threat Intel totals in sync with Incident Timeline by using
+        // an unbounded Mongo count for the same time window (AI report uses a
+        // capped sample size for aggregates).
+        if (report?.ok && isMongoConnected()) {
+            try {
+                const auth = await getAuthContextFromHeaders(req.headers);
+                const to = new Date();
+                const from = new Date(to.getTime() - sinceHours * 60 * 60 * 1000);
+                const match = {
+                    owner_user_id: auth.ownerUserId,
+                    is_anomaly: true,
+                    timestamp: { $gte: from, $lt: to },
+                };
+                const totalThreats = await Packet.countDocuments(match);
+                report.totalThreats = totalThreats;
+            } catch {
+                // Best-effort only; fall back to AI-reported totals.
+            }
+        }
+
         return res.json(report);
     } catch (e) {
         return res.status(503).json({ ok: false, error: 'AI report service unavailable', details: String(e) });
