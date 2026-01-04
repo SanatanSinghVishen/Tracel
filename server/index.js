@@ -1706,8 +1706,8 @@ app.post('/api/chat', async (req, res) => {
             if (timezone) lines.push(`- Timezone: ${timezone}`);
             lines.push(`- Connected: ${connected}`);
             if (view) lines.push(`- View: ${view}`);
-            if (packets != null) lines.push(`- UI packets: ${Number(packets).toLocaleString('en-IN')}`);
-            if (threats != null) lines.push(`- UI threats: ${Number(threats).toLocaleString('en-IN')}`);
+            if (packets != null) lines.push(`- UI packets (session): ${Number(packets).toLocaleString('en-IN')}`);
+            if (threats != null) lines.push(`- UI threats (session): ${Number(threats).toLocaleString('en-IN')}`);
             if (uptime != null) lines.push(`- UI uptime (sec): ${Number(uptime).toLocaleString('en-IN')}`);
             if (pktAnom || pktMethod || pktBytes != null || pktScore != null) {
                 lines.push(`- Current packet: ${[pktAnom, pktMethod, pktBytes != null ? `${pktBytes}B` : null, pktScore != null ? `score=${pktScore}` : null].filter(Boolean).join(' | ')}`);
@@ -1752,7 +1752,7 @@ app.post('/api/chat', async (req, res) => {
 
         // Deterministic answers for common "live status" / "latest threat" / "simulate attack" intents.
         // This prevents the LLM from hallucinating numbers or UI locations.
-        const asksForLiveStatus = /\b(live status|status|briefing|latest threat|latest attack|last attack|recent threats|top attacker|threats? in the last)\b/i.test(userMessage);
+        const asksForLiveStatus = /\b(live status|status|briefing|latest threat|latest attack|last attack|recent threats|top attacker|threats? in the last|24\s*h|24-?hour|last\s*24\s*hours?|24\s*hour\s*summary|24h\s*summary)\b/i.test(userMessage);
         const asksToSimulateAttack = /\b(simulate|simulation)\b.*\b(attack|threat)\b|\b(start|enable|turn on)\b.*\b(attack|attack mode)\b|\battack mode\b/i.test(userMessage);
 
         if (asksToSimulateAttack) {
@@ -1787,7 +1787,10 @@ app.post('/api/chat', async (req, res) => {
     ${clientContext ? formatClientContextSafe(clientContext) : '—'}
 
     Instructions:
-    - CRITICAL: Never invent or infer live metrics (packets, threats, attacker IPs, countries, timestamps). Use ONLY values present in SECTION 3/4. If a value is missing or shown as "—"/"unavailable", say it is unavailable.
+    - CRITICAL: Never invent or infer live metrics (packets, threats, attacker IPs, countries, timestamps).
+    - For any "last 24h" / "24h summary" / threat-intel questions: treat SECTION 3 as the single source of truth.
+    - SECTION 4 UI counters are session/UI indicators and may not match 24h totals; do not use them as 24h numbers.
+    - If a value is missing or shown as "—"/"unavailable", say it is unavailable.
     - Be specific about Tracel features and where they are in the UI.
     - If the user asks "why" something is empty/broken, suggest the most likely Tracel-specific causes.
     - Output format: plain text only (no Markdown). Do not use asterisks (*) for bullets or emphasis.
