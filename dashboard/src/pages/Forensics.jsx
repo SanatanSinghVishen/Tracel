@@ -1756,7 +1756,7 @@ export default function Forensics() {
               </button>
             </div>
 
-            <div className="p-4 space-y-3 overflow-y-auto scroll-hidden max-h-[75vh]">
+            <div className="p-4 space-y-3 overflow-y-auto scroll-hidden max-h-[75vh]" data-lenis-prevent>
               <div className="flex flex-wrap gap-2">
                 {selected?.ai_scored === false ? (
                   <span className="inline-flex items-center px-2 py-1 rounded text-xs font-bold border border-white/10 bg-white/5 text-slate-200">
@@ -1776,7 +1776,7 @@ export default function Forensics() {
                 </span>
               </div>
 
-              <pre className="text-xs text-slate-200 glass border border-white/10 rounded-2xl p-3 overflow-auto">
+              <pre className="text-xs text-slate-200 glass border border-white/10 rounded-2xl p-3 overflow-auto" data-lenis-prevent>
 {JSON.stringify(selected, null, 2)}
               </pre>
             </div>

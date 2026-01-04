@@ -114,7 +114,7 @@ function ParticleNetwork() {
           if (dist2 > linkDist2) continue;
 
           const dist = Math.sqrt(dist2);
-          let alpha = (1 - dist / linkDist) * 0.12;
+          let alpha = (1 - dist / linkDist) * 0.22;
 
           if (mouseActive) {
             const gx = (a.x + b.x) * 0.5;
@@ -122,7 +122,7 @@ function ParticleNetwork() {
             const mdx = gx - mx;
             const mdy = gy - my;
             const md = Math.sqrt(mdx * mdx + mdy * mdy);
-            alpha += Math.max(0, 1 - md / 240) * 0.08;
+            alpha += Math.max(0, 1 - md / 240) * 0.14;
           }
 
           ctx.strokeStyle = `rgba(255,255,255,${alpha})`;
@@ -139,7 +139,7 @@ function ParticleNetwork() {
           mouseActive ? Math.max(0, 1 - Math.hypot(p.x - mx, p.y - my) / 280) : 0;
         ctx.beginPath();
         ctx.arc(p.x, p.y, p.r + boost * 0.9, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255,255,255,${0.22 + boost * 0.25})`;
+        ctx.fillStyle = `rgba(255,255,255,${0.32 + boost * 0.40})`;
         ctx.fill();
       }
 
@@ -281,16 +281,16 @@ export default function Landing() {
     <div className="relative min-h-screen w-full overflow-hidden">
       {/* Moving background (subtle) */}
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 opacity-[0.35]">
+        <div className="absolute inset-0 opacity-[0.65]">
           <ParticleNetwork />
         </div>
 
         <div
-          className="absolute -top-24 -left-24 h-80 w-80 rounded-full blur-3xl bg-tracel-accent-blue/10"
+          className="absolute -top-24 -left-24 h-80 w-80 rounded-full blur-2xl bg-tracel-accent-blue/[0.26]"
           style={{ animation: 'tracelFloat 18s ease-in-out infinite' }}
         />
         <div
-          className="absolute top-10 -right-28 h-96 w-96 rounded-full blur-3xl bg-tracel-accent-purple/10"
+          className="absolute top-10 -right-28 h-96 w-96 rounded-full blur-2xl bg-tracel-accent-purple/[0.26]"
           style={{ animation: 'tracelFloat 22s ease-in-out infinite' }}
         />
       </div>
@@ -320,7 +320,7 @@ export default function Landing() {
           >
             <div className="inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs text-slate-200 border border-white/10 bg-white/5">
               <Sparkles className="h-4 w-4 text-tracel-accent-purple" />
-              <span className="data-mono">Real-time • AI • Forensics • Globe</span>
+              <span className="data-mono">Real-time • AI • Forensics</span>
             </div>
 
             <h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-semibold text-white leading-[1.05] tracking-tight">

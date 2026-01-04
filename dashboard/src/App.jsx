@@ -41,8 +41,8 @@ const clerkAppearance = {
 
 function AuthShell({ children }) {
   return (
-    <div className="min-h-screen overflow-y-auto scroll-hidden">
-      <div className="min-h-screen flex items-center justify-center p-6 sm:p-10">
+    <div className="min-h-screen overflow-y-auto scroll-hidden" data-scroll-wrapper="auth">
+      <div className="min-h-screen flex items-center justify-center p-6 sm:p-10" data-scroll-content>
         <div className="w-full max-w-[720px]">
           {children}
         </div>
@@ -52,6 +52,9 @@ function AuthShell({ children }) {
 }
 
 function AppShell() {
+  const { pathname } = useLocation();
+  const isDashboardRoute = pathname.startsWith('/dashboard');
+
   return (
     <SocketProvider>
       <div className="h-screen min-h-screen font-sans overflow-hidden bg-zinc-950 text-white">
@@ -59,8 +62,16 @@ function AppShell() {
           <Sidebar />
 
           <div className="flex-1 min-w-0 flex flex-col">
-            <main className="flex-1 min-w-0 overflow-y-auto overflow-x-hidden scroll-hidden p-4 sm:p-6">
-              <Outlet />
+            <main
+              className={
+                `flex-1 min-w-0 min-h-0 overflow-x-hidden scroll-hidden ` +
+                (isDashboardRoute ? 'overflow-hidden p-3 sm:p-5' : 'overflow-y-auto p-4 sm:p-6')
+              }
+              data-scroll-wrapper="app"
+            >
+              <div data-scroll-content className="h-full min-h-0">
+                <Outlet />
+              </div>
             </main>
           </div>
         </div>
@@ -88,16 +99,50 @@ function AdminOnly({ children }) {
 
 function GlobalScroller() {
   const { pathname } = useLocation();
-  const shouldSmooth = pathname === '/' || pathname.startsWith('/sign-in') || pathname.startsWith('/sign-up');
+  const shouldSmooth = !pathname.startsWith('/dashboard');
 
   useEffect(() => {
-    if (shouldSmooth) {
-      enableSmoothScroll();
-      return () => disableSmoothScroll();
+    if (!shouldSmooth) {
+      disableSmoothScroll();
+      return undefined;
     }
+
+    // Always reset so wrapper/content can change between routes.
     disableSmoothScroll();
-    return undefined;
-  }, [shouldSmooth]);
+
+    const isAuthRoute = pathname.startsWith('/sign-in') || pathname.startsWith('/sign-up');
+    const selector = isAuthRoute ? '[data-scroll-wrapper="auth"]' : '[data-scroll-wrapper="app"]';
+
+    let cancelled = false;
+
+    const tryEnable = () => {
+      if (cancelled) return;
+
+      // Landing uses normal document scrolling (no app shell wrapper).
+      if (pathname === '/') {
+        enableSmoothScroll();
+        return;
+      }
+
+      const wrapper = document.querySelector(selector);
+      const content = wrapper ? wrapper.querySelector('[data-scroll-content]') : null;
+
+      if (!wrapper) {
+        // Route may not have rendered yet.
+        window.requestAnimationFrame(tryEnable);
+        return;
+      }
+
+      enableSmoothScroll({ wrapper, content });
+    };
+
+    window.requestAnimationFrame(tryEnable);
+
+    return () => {
+      cancelled = true;
+      disableSmoothScroll();
+    };
+  }, [pathname, shouldSmooth]);
 
   return null;
 }

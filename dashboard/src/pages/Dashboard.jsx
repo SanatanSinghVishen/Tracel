@@ -178,7 +178,7 @@ export default function Dashboard() {
   const attackActive = !!currentPacket?.is_anomaly;
 
   return (
-    <div className="min-w-0 flex flex-col gap-4 h-full min-h-0 animate-fade-in">
+    <div className="min-w-0 flex flex-col gap-3 h-full min-h-0 animate-fade-in">
       <ChatAssistant
         connection={connection}
         stats={stats}
@@ -283,7 +283,7 @@ export default function Dashboard() {
       </div>
 
       {/* KPI Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 shrink-0">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
         <div className="glass-card glow-hover p-5 hover-lift">
           <p className="text-slate-400 text-xs uppercase tracking-wider">Total Packets</p>
           <p className="mt-2 text-3xl font-semibold text-white data-mono tabular-nums whitespace-nowrap leading-none">
@@ -333,7 +333,7 @@ export default function Dashboard() {
       </div>
 
       {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 min-w-0 flex-1 min-h-0 items-stretch">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 min-w-0 flex-1 min-h-0 items-stretch">
         {/* Traffic */}
         <div className="glass-card glow-hover lg:col-span-2 p-5 sm:p-6 flex flex-col min-h-0 h-full animate-fade-up">
           <div className="flex items-center justify-between mb-4">
@@ -377,18 +377,18 @@ export default function Dashboard() {
 
           <div className="flex-1 min-h-0 min-w-0">
             {trafficView === 'globe' ? (
-              <div className="h-full min-h-[220px] overflow-hidden rounded-lg">
+              <div className="h-full min-h-0 overflow-hidden rounded-lg">
                 <TrafficGlobe />
               </div>
             ) : trafficData.length === 0 ? (
-              <div className="h-full min-h-[220px] flex flex-col justify-center gap-3">
+              <div className="h-full min-h-0 flex flex-col justify-center gap-3">
                 <div className="h-6 w-40 skeleton" />
                 <div className="h-40 w-full skeleton" />
                 <div className="h-3 w-3/4 skeleton" />
               </div>
             ) : (
-              <div className="h-full min-h-[220px] min-w-0">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={220}>
+              <div className="h-full min-h-0 min-w-0">
+                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <AreaChart data={trafficData}>
                     <defs>
                       <linearGradient id="bytesFillSafe" x1="0" y1="0" x2="0" y2="1">

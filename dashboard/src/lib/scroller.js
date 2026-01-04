@@ -16,13 +16,27 @@ export function enableSmoothScroll(options = {}) {
   if (prefersReducedMotion()) return;
   if (lenis) return;
 
+  const wrapper =
+    typeof options.wrapper === 'string'
+      ? document.querySelector(options.wrapper)
+      : options.wrapper;
+
+  const content =
+    typeof options.content === 'string'
+      ? document.querySelector(options.content)
+      : options.content;
+
+  const { wrapper: _wrapperOpt, content: _contentOpt, ...rest } = options;
+
   lenis = new Lenis({
     duration: 0.95,
     smoothWheel: true,
     smoothTouch: false,
     wheelMultiplier: 0.9,
     touchMultiplier: 1.0,
-    ...options,
+    ...(wrapper ? { wrapper } : null),
+    ...(content ? { content } : null),
+    ...rest,
   });
 
   const raf = (time) => {
