@@ -258,6 +258,19 @@ const aiStatus = {
     lastError: null,
 };
 
+let aiHealthPenaltyUntilMs = 0;
+
+function getRetryAfterMsFromHeaders(headers, fallbackMs) {
+    try {
+        const ra = headers?.['retry-after'] ?? headers?.['Retry-After'];
+        const n = Number(ra);
+        if (Number.isFinite(n) && n > 0) return Math.max(1000, n * 1000);
+    } catch {
+        // best-effort
+    }
+    return fallbackMs;
+}
+
 // --- System Initialization Phase (Render cold-start boot gating) ---
 // Used by the dashboard to show a boot overlay while the separate ai-engine service wakes.
 let isAIReady = false;
@@ -310,6 +323,16 @@ async function checkAIHealth() {
             validateStatus: () => true,
         });
 
+        if (res?.status === 429) {
+            const delayMs = Math.max(AI_WAKE_POLL_MS, getRetryAfterMsFromHeaders(res?.headers, 60_000));
+            aiHealthPenaltyUntilMs = Math.max(aiHealthPenaltyUntilMs, Date.now() + delayMs);
+            log.info('[INIT] AI rate-limited; waiting before retry...');
+            setTimeout(() => {
+                checkAIHealth().catch(() => void 0);
+            }, delayMs);
+            return;
+        }
+
         const ready =
             res.status === 200
             && res?.data?.ok === true
@@ -361,6 +384,20 @@ async function pollAiHealthOnce({ load = false } = {}) {
     const nowIso = new Date().toISOString();
     aiStatus.lastCheckedAt = nowIso;
 
+    // If the AI service is rate-limiting us, back off to avoid a tight 429 loop.
+    if (Date.now() < aiHealthPenaltyUntilMs) {
+        aiStatus.ok = false;
+        aiStatus.modelLoaded = null;
+        aiStatus.threshold = null;
+        aiStatus.lastError = {
+            message: 'AI health is rate-limited (backing off)',
+            code: 'AI_HEALTH_RATE_LIMITED',
+            status: 429,
+            retryAt: new Date(aiHealthPenaltyUntilMs).toISOString(),
+        };
+        return;
+    }
+
     if (isAiDisabled()) {
         aiStatus.ok = false;
         aiStatus.modelLoaded = null;
@@ -402,6 +439,21 @@ async function pollAiHealthOnce({ load = false } = {}) {
             validateStatus: () => true,
         });
 
+        if (res?.status === 429) {
+            const delayMs = getRetryAfterMsFromHeaders(res?.headers, 60_000);
+            aiHealthPenaltyUntilMs = Math.max(aiHealthPenaltyUntilMs, Date.now() + delayMs);
+            aiStatus.ok = false;
+            aiStatus.modelLoaded = null;
+            aiStatus.threshold = null;
+            aiStatus.lastError = {
+                message: 'AI health returned 429',
+                code: 'AI_HEALTH_RATE_LIMITED',
+                status: 429,
+                retryAt: new Date(aiHealthPenaltyUntilMs).toISOString(),
+            };
+            return;
+        }
+
         // Support both:
         // - ai-engine detailed health (GET /health?load=1) -> { ok: true, modelLoaded: ... }
         // - ai-engine lightweight health (GET /health) -> { status: "running" }
@@ -434,6 +486,20 @@ async function pollAiHealthOnce({ load = false } = {}) {
         if (ok) isAIReady = true;
 
     } catch (e) {
+        if (e?.response?.status === 429) {
+            const delayMs = getRetryAfterMsFromHeaders(e?.response?.headers, 60_000);
+            aiHealthPenaltyUntilMs = Math.max(aiHealthPenaltyUntilMs, Date.now() + delayMs);
+            aiStatus.ok = false;
+            aiStatus.modelLoaded = null;
+            aiStatus.threshold = null;
+            aiStatus.lastError = {
+                message: 'AI health returned 429',
+                code: 'AI_HEALTH_RATE_LIMITED',
+                status: 429,
+                retryAt: new Date(aiHealthPenaltyUntilMs).toISOString(),
+            };
+            return;
+        }
         aiStatus.ok = false;
         aiStatus.modelLoaded = null;
         aiStatus.threshold = null;
@@ -458,6 +524,7 @@ async function pollAiHealthOnce({ load = false } = {}) {
 async function warmupAiBestEffort({ attempts = 3 } = {}) {
     // Fire a few spaced health checks so a sleeping Render service has time to boot.
     for (let i = 0; i < attempts; i += 1) {
+        if (Date.now() < aiHealthPenaltyUntilMs) return;
         await pollAiHealthOnce({ load: true }).catch(() => void 0);
         if (aiStatus.ok) return;
         await sleep(1500);
@@ -540,8 +607,10 @@ function startAiKeepAlive() {
     }, 10 * 60 * 1000);
 }
 
-// Default to 15s between checks.
-const defaultAiPollMs = 15_000;
+// Default polling cadence:
+// - Hosted envs: keep it slow to avoid 429s (and because cold-starts take time anyway).
+// - Local dev: faster feedback.
+const defaultAiPollMs = isHostedEnvironment() ? 60_000 : 15_000;
 setInterval(() => {
     // Frequent polling should be "light" (no model warmup flag) to avoid 429s.
     pollAiHealthOnce({ load: false }).catch(() => void 0);
