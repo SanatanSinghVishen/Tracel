@@ -260,6 +260,12 @@ let isAIReady = false;
 let aiHealthBackoffUntilMs = 0;
 let aiHealthBackoffLevel = 0;
 
+function enterAiPenaltyBox() {
+    aiHealthBackoffUntilMs = Date.now() + 60_000;
+    aiHealthBackoffLevel = Math.min(aiHealthBackoffLevel + 1, 6);
+    log.warn('Rate limit hit (429). Pausing AI health checks for 60s.');
+}
+
 function computeRetryDelayMsFrom429(res) {
     try {
         const retryAfterRaw = res?.headers?.['retry-after'];
@@ -311,10 +317,11 @@ async function checkAIHealth() {
         }
 
         if (res.status === 429) {
-            aiHealthBackoffLevel = Math.min(aiHealthBackoffLevel + 1, 6);
-            const baseDelay = computeRetryDelayMsFrom429(res);
-            const delay = Math.min(baseDelay * (2 ** aiHealthBackoffLevel), 60_000);
-            aiHealthBackoffUntilMs = Date.now() + delay;
+            enterAiPenaltyBox();
+            setTimeout(() => {
+                checkAIHealth().catch(() => void 0);
+            }, 60_000);
+            return;
         }
     } catch {
         // fall through to retry
@@ -397,6 +404,16 @@ async function pollAiHealthOnce({ load = false } = {}) {
             validateStatus: () => true,
         });
 
+        if (res?.status === 429) {
+            aiStatus.ok = false;
+            aiStatus.modelLoaded = null;
+            aiStatus.threshold = null;
+            aiStatus.lastError = { message: 'AI rate limited (429)', code: 'AI_RATE_LIMITED', status: 429 };
+            isAIReady = false;
+            enterAiPenaltyBox();
+            return;
+        }
+
         // Support both:
         // - ai-engine detailed health (GET /health?load=1) -> { ok: true, modelLoaded: ... }
         // - ai-engine lightweight health (GET /health) -> { status: "running" }
@@ -442,12 +459,7 @@ async function pollAiHealthOnce({ load = false } = {}) {
             status: e?.response?.status,
         };
 
-        if (e?.response?.status === 429) {
-            aiHealthBackoffLevel = Math.min(aiHealthBackoffLevel + 1, 6);
-            const baseDelay = computeRetryDelayMsFrom429(e?.response);
-            const delay = Math.min(baseDelay * (2 ** aiHealthBackoffLevel), 60_000);
-            aiHealthBackoffUntilMs = Date.now() + delay;
-        }
+        if (e?.response?.status === 429) enterAiPenaltyBox();
     }
 
     // Broadcast only when ok-state flips.
@@ -518,11 +530,12 @@ function startAiKeepAlive() {
     }, 10 * 60 * 1000);
 }
 
-const defaultAiPollMs = isHostedEnvironment() ? 30_000 : 5000;
+// Default to 15s between checks to avoid Render/Cloudflare 429 loops.
+const defaultAiPollMs = 15_000;
 setInterval(() => {
     // Frequent polling should be "light" (no model warmup flag) to avoid 429s.
     pollAiHealthOnce({ load: false }).catch(() => void 0);
-}, Math.max(2000, Math.min(parseInt(process.env.AI_HEALTH_POLL_MS || String(defaultAiPollMs), 10) || defaultAiPollMs, 60_000)));
+}, Math.max(15_000, Math.min(parseInt(process.env.AI_HEALTH_POLL_MS || String(defaultAiPollMs), 10) || defaultAiPollMs, 60_000)));
 pollAiHealthOnce({ load: true }).catch(() => void 0);
 
 const memoryStore = new MemoryStore({
@@ -695,6 +708,7 @@ function startOrGetOwnerStream(ownerUserId) {
 
     entry.stream = createTrafficStream({
         owner: ownerUserId,
+        getAiReady: () => !!isAIReady,
         emitPacket: (packetData) => {
             const isAttackMode = !!entry.stream?.isAttackMode;
             const rawScore = packetData?.anomaly_score;

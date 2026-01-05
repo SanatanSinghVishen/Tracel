@@ -352,7 +352,7 @@ function getPacketData(isAttackMode, { owner } = {}) {
     return isMalicious ? generateAttackTraffic({ owner }) : generateNormalTraffic({ owner });
 }
 
-function createTrafficStream({ owner, emitPacket, persistPacket } = {}) {
+function createTrafficStream({ owner, emitPacket, persistPacket, getAiReady } = {}) {
     let isAttackMode = false;
     let timer = null;
     let running = false;
@@ -376,9 +376,17 @@ function createTrafficStream({ owner, emitPacket, persistPacket } = {}) {
         // Generate behavior-based packet data (no hardcoded anomaly overrides).
         const packetData = getPacketData(isAttackMode, { owner });
 
+        // Safety guard: do not call AI while it's still waking up / not ready.
+        const aiReady = typeof getAiReady === 'function' ? !!getAiReady() : true;
+        if (!isAiDisabled() && !aiReady) {
+            packetData.is_anomaly = false;
+            packetData.anomaly_score = null;
+            packetData.ai_not_analyzed = true;
+        }
+
         // --- STEP 1: ASK AI FOR VERDICT ---
-        const aiUrl = !isAiDisabled() ? getAiPredictUrl() : null;
-        if (!isAiDisabled() && aiUrl) {
+        const aiUrl = (!isAiDisabled() && aiReady) ? getAiPredictUrl() : null;
+        if (!isAiDisabled() && aiReady && aiUrl) {
             try {
                 if (Date.now() < aiBackoffUntilMs) {
                     packetData.is_anomaly = false;
