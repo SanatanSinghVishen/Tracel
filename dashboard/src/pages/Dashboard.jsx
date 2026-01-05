@@ -34,6 +34,32 @@ export default function Dashboard() {
   const [bootVisible, setBootVisible] = useState(true);
   const [bootFading, setBootFading] = useState(false);
 
+  const bootFacts = useMemo(
+    () => [
+      'MFA can stop most credential-stuffing attacks by adding a second factor.',
+      'Least privilege limits blast radius—only grant access that’s truly needed.',
+      'Patch cadence matters: attackers often exploit known bugs within days of disclosure.',
+      'Phishing works because it targets humans—verify links, domains, and sender intent.',
+      'Network segmentation helps contain incidents when something gets compromised.',
+      'Logs are your time machine—centralized logging makes investigations dramatically faster.',
+      'Backups are a security control: test restores so ransomware can’t hold you hostage.',
+      'Anomaly detection is strongest when paired with context (geo, time, behavior).',
+    ],
+    [],
+  );
+
+  const [bootFactIndex, setBootFactIndex] = useState(0);
+
+  useEffect(() => {
+    if (!bootVisible || bootFading) return undefined;
+
+    const id = window.setInterval(() => {
+      setBootFactIndex((i) => (i + 1) % bootFacts.length);
+    }, 4200);
+
+    return () => window.clearInterval(id);
+  }, [bootVisible, bootFading, bootFacts.length]);
+
   useEffect(() => {
     let cancelled = false;
     let intervalId = null;
@@ -289,17 +315,41 @@ export default function Dashboard() {
             (bootFading ? 'opacity-0 pointer-events-none' : 'opacity-100')
           }
         >
-          <div className="w-[min(92vw,520px)] rounded-2xl border border-white/10 bg-black/40 p-6 sm:p-8 text-center">
-            <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-white/10 bg-white/5">
-              <Cpu className="h-7 w-7 text-slate-200 animate-pulse" />
+          <div className="w-[min(92vw,560px)] glass-card glow-hover p-6 sm:p-8 text-center">
+            <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-zinc-800 bg-zinc-950/60">
+              <Cpu className="h-7 w-7 text-slate-200" />
             </div>
-            <div className="text-white text-xl sm:text-2xl font-semibold">Initializing Neural Engine...</div>
-            <div className="mt-2 text-sm text-slate-300">
-              Waking up cloud resources (this may take ~1 minute)...
+
+            <div className="text-white text-xl sm:text-2xl font-semibold">Initializing AI Engine…</div>
+            <div className="mt-1 text-xs text-slate-400 uppercase tracking-wider">
+              Warming up models + scoring pipeline
             </div>
-            <div className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
-              <div className="h-full w-1/2 bg-white/30 animate-pulse" />
+
+            <div className="mt-5 h-2 w-full overflow-hidden rounded-full border border-zinc-800 bg-zinc-950/60">
+              <div className="tracel-bootbar h-full w-[45%] rounded-full bg-gradient-to-r from-tracel-accent-blue/70 to-tracel-accent-purple/70" />
             </div>
+
+            <div className="mt-5 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 text-left">
+              <div className="flex items-center justify-between gap-3">
+                <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Cyber fact</div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/60 px-2.5 py-1 text-[11px] text-slate-200">
+                  <span className="pulse-dot" />
+                  <span>Booting</span>
+                </div>
+              </div>
+              <div key={bootFactIndex} className="mt-2 text-sm text-slate-200 leading-relaxed animate-fade-in">
+                {bootFacts[bootFactIndex]}
+              </div>
+            </div>
+
+            <style>{`
+              .tracel-bootbar{ animation: tracelBootSweep 1.35s ease-in-out infinite; }
+              @keyframes tracelBootSweep{
+                0% { transform: translateX(-55%); opacity: 0.65; }
+                50% { opacity: 1; }
+                100% { transform: translateX(145%); opacity: 0.65; }
+              }
+            `}</style>
           </div>
         </div>
       ) : null}
