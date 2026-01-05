@@ -403,7 +403,9 @@ export default function Forensics() {
         : [];
 
       const pie = Array.isArray(data.attackVectorDistribution) ? data.attackVectorDistribution : [];
-      const topCountries = Array.isArray(data.geoTopCountries) ? data.geoTopCountries : [];
+      const allCountries = Array.isArray(data.geoAllCountries)
+        ? data.geoAllCountries
+        : (Array.isArray(data.geoTopCountries) ? data.geoTopCountries : []);
       const confidence = Array.isArray(data.aiConfidenceDistribution) ? data.aiConfidenceDistribution : [];
 
       setIntelConfidenceMeta({
@@ -419,7 +421,7 @@ export default function Forensics() {
           { name: 'Protocol', value: pie.find((p) => p?.name === 'Protocol')?.value || 0 },
           { name: 'Application', value: pie.find((p) => p?.name === 'Application')?.value || 0 },
         ],
-        topCountries: topCountries.slice(0, 5).map((c) => ({
+        topCountries: allCountries.map((c) => ({
           name: c.name,
           count: c.count,
           pct: c.pct,
@@ -1557,7 +1559,7 @@ export default function Forensics() {
                 <div className="mt-1 text-sm text-slate-300">Country-level breakdown.</div>
               </div>
 
-              <div className="mt-4 space-y-2">
+              <div className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
                 {intelLoading ? (
                   <>
                     <div className="h-9 rounded-xl bg-white/5 border border-white/10 skeleton" />
@@ -1569,7 +1571,7 @@ export default function Forensics() {
                 ) : intelReport.total === 0 ? (
                   <div className="text-sm text-slate-400">No data available yet.</div>
                 ) : (
-                  intelReport.topCountries.slice(0, 5).map((c) => (
+                  intelReport.topCountries.map((c) => (
                     <div key={c.name} className="flex items-center gap-3">
                       <div className="w-40 text-sm text-slate-200 truncate">{c.name}</div>
                       <div className="flex-1 h-2 rounded bg-white/10 overflow-hidden">

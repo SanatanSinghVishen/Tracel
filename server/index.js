@@ -1488,14 +1488,15 @@ function computeThreatIntelFromPackets(packets) {
         byCountry.set(country, (byCountry.get(country) || 0) + 1);
     }
 
-    const geoTopCountries = Array.from(byCountry.entries())
+    const geoAllCountries = Array.from(byCountry.entries())
         .sort((a, b) => b[1] - a[1])
-        .slice(0, 5)
         .map(([name, count]) => ({
             name,
             count,
             pct: totalThreats ? Math.round((count / totalThreats) * 100) : 0,
         }));
+
+    const geoTopCountries = geoAllCountries.slice(0, 5);
 
     return {
         ok: true,
@@ -1506,6 +1507,7 @@ function computeThreatIntelFromPackets(packets) {
         topHostileIps,
         attackVectorDistribution,
         geoTopCountries,
+        geoAllCountries,
         aiConfidenceDistribution,
         aiConfidenceDefinition:
             'Heuristic confidence based on recent in-memory packets (score buckets: Obvious ≥ 0.75, Subtle ≥ 0.35, Other otherwise).',
@@ -1660,7 +1662,7 @@ async function computeThreatIntelFromMongo({ ownerUserId, since, to, limit }) {
 
     const totalThreats = await Packet.countDocuments(baseMatch);
 
-    const [topHostileIps, attackVectorDistribution, geoTopCountries] = await Promise.all([
+    const [topHostileIps, attackVectorDistribution, geoAllCountries] = await Promise.all([
         Packet.aggregate([
             { $match: baseMatch },
             {
@@ -1708,7 +1710,8 @@ async function computeThreatIntelFromMongo({ ownerUserId, since, to, limit }) {
                 { $addFields: { country: countryExpr } },
                 { $group: { _id: '$country', count: { $sum: 1 } } },
                 { $sort: { count: -1 } },
-                { $limit: 5 },
+                // Safety cap; in practice this stays small (we map to ~24 countries).
+                { $limit: 200 },
             ]);
 
             return (rows || []).map((r) => {
@@ -1770,7 +1773,8 @@ async function computeThreatIntelFromMongo({ ownerUserId, since, to, limit }) {
         totalThreats: Number(totalThreats || 0),
         topHostileIps: Array.isArray(topHostileIps) ? topHostileIps : [],
         attackVectorDistribution,
-        geoTopCountries,
+        geoTopCountries: Array.isArray(geoAllCountries) ? geoAllCountries.slice(0, 5) : [],
+        geoAllCountries: Array.isArray(geoAllCountries) ? geoAllCountries : [],
         aiConfidenceDefinition: {
             method: 'quantiles',
             obvious: 'lowest ~20% anomaly scores (most suspicious)',
