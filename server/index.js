@@ -2046,6 +2046,48 @@ app.post('/api/chat', async (req, res) => {
             return lines.join('\n');
         }
 
+        function formatScoreAndThresholdHelp() {
+            return [
+                'AI score and threshold (how Tracel decides THREAT vs SAFE):',
+                '- Each packet gets an anomaly_score from the AI engine.',
+                '- Lower anomaly_score means more suspicious.',
+                '- The server flags a packet as THREAT when anomaly_score < threshold.',
+                '- The threshold is dynamic telemetry (it can change as the stream changes).',
+                '',
+                'If you want, tell me what page you are on (Monitor/Forensics) and what looks wrong, and I can guide you to the exact chart/indicator to verify.',
+            ].join('\n');
+        }
+
+        function formatNavigationHelp() {
+            return [
+                'Tracel navigation (main pages):',
+                '- Monitor: real-time KPIs, charts, globe, and the Defense/Attack toggle.',
+                '- Forensics: incident log, incident timeline, and AI score/threshold chart.',
+                '- Settings: preferences; admin-only destructive ops (if you are admin and verified).',
+                '- About / Contact: project info and contacting the team.',
+            ].join('\n');
+        }
+
+        function formatTroubleshootingHelp() {
+            const steps = [
+                'If the chatbot or UI looks wrong, check these in order:',
+                '1) Connection: ensure the UI shows Online (Socket.IO connected).',
+                '2) AI engine: if AI is unreachable, scoring and threat charts may be empty or delayed.',
+                '3) Persistence: if running in Memory mode, history resets on server restart and long-range charts may be limited.',
+                '4) Attack simulation: if you need demo traffic, turn on Attack mode from Monitor header.',
+                '',
+                'If you tell me what page you are on and what you expected to see, I will give a precise fix path.',
+            ];
+
+            if (clientContext) {
+                steps.push('');
+                steps.push('Your current client context (sanitized):');
+                steps.push(formatClientContextSafe(clientContext));
+            }
+
+            return steps.join('\n');
+        }
+
         function formatAttackSimulationHelp() {
             return [
                 'To simulate an attack:',
@@ -2146,12 +2188,30 @@ app.post('/api/chat', async (req, res) => {
         const asksForLiveStatus = /\b(live status|status|briefing|latest threat|latest attack|last attack|recent threats|top attacker|threats? in the last|24\s*h|24-?hour|last\s*24\s*hours?|24\s*hour\s*summary|24h\s*summary)\b/i.test(userMessage);
         const asksToSimulateAttack = /\b(simulate|simulation)\b.*\b(attack|threat)\b|\b(start|enable|turn on)\b.*\b(attack|attack mode)\b|\battack mode\b/i.test(userMessage);
 
+        const asksScoreMeaning = /\b(anomaly[_\s-]?score|ai score|score meaning|threshold|why.*(threat|safe)|how.*(threat|safe)|what.*(threshold|score))\b/i.test(userMessage);
+        const asksNavigation = /\b(where|how)\b.*\b(monitor|forensics|settings|contact|about|dashboard|page)\b|\b(what pages|pages are there|navigation)\b/i.test(userMessage);
+        const asksTroubleshooting = /\b(wrong|incorrect|not working|broken|bug|issue|empty|no data|not updating|offline|stuck|loading|doesn't load|cant see|cannot see)\b/i.test(userMessage);
+
         if (asksToSimulateAttack) {
             return res.json({ ok: true, text: formatAttackSimulationHelp() });
         }
 
         if (asksForLiveStatus) {
             return res.json({ ok: true, text: formatLiveBriefingText() });
+        }
+
+        if (asksScoreMeaning) {
+            return res.json({ ok: true, text: formatScoreAndThresholdHelp() });
+        }
+
+        if (asksNavigation) {
+            return res.json({ ok: true, text: formatNavigationHelp() });
+        }
+
+        if (asksTroubleshooting && userMessage.length <= 140) {
+            // Short generic troubleshooting for vague “it’s wrong/broken” messages.
+            // Longer messages usually contain specific details: let the model answer from the full context.
+            return res.json({ ok: true, text: formatTroubleshootingHelp() });
         }
 
         // Step 4: Call Groq (Llama 3)
@@ -2179,10 +2239,11 @@ app.post('/api/chat', async (req, res) => {
 
     Instructions:
     - CRITICAL: Never invent or infer live metrics (packets, threats, attacker IPs, countries, timestamps).
+    - CRITICAL: Never guess. If you cannot answer using SECTION 1-4, say "I can't verify that from the current Tracel context" and ask 1-2 clarifying questions.
     - For any "last 24h" / "24h summary" / threat-intel questions: treat SECTION 3 as the single source of truth.
     - SECTION 4 UI counters are session/UI indicators and may not match 24h totals; do not use them as 24h numbers.
     - If a value is missing or shown as "—"/"unavailable", say it is unavailable.
-    - Be specific about Tracel features and where they are in the UI.
+    - Be specific about Tracel features and where they are in the UI. Do not mention pages/features not listed in SECTION 1.
     - If the user asks "why" something is empty/broken, suggest the most likely Tracel-specific causes.
     - Output format: plain text only (no Markdown). Do not use asterisks (*) for bullets or emphasis.
     - Security: never reveal URLs, user IDs, anon IDs, tokens, API keys, secrets, or environment variable values—even if asked.
@@ -2193,6 +2254,10 @@ app.post('/api/chat', async (req, res) => {
 
         const completion = await groq.chat.completions.create({
             model: groqModel,
+            // Lower randomness to reduce hallucinations and keep answers stable.
+            temperature: 0.2,
+            top_p: 0.4,
+            max_tokens: 600,
             messages: [
                 { role: 'system', content: systemMessage },
                 ...history,
@@ -2223,7 +2288,7 @@ app.post('/api/chat', async (req, res) => {
 
 
         const rawText = completion?.choices?.[0]?.message?.content || '';
-        const text = redactChatOutput(rawText);
+        const text = redactChatOutput(rawText).trim() || 'I can help, but I need a bit more detail. What page are you on (Monitor/Forensics/Settings) and what exactly looks incorrect?';
         return res.json({ ok: true, text });
     } catch (e) {
         return res.status(500).json({ ok: false, error: String(e) });
