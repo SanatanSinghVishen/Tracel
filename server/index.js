@@ -285,6 +285,30 @@ const AI_WAKE_POLL_MS = Math.max(
     parseInt(String(process.env.AI_WAKE_POLL_MS || process.env.AI_HEALTH_POLL_MS || String(defaultAiWakePollMs)), 10) || defaultAiWakePollMs
 );
 
+async function probeAiRootReady(base) {
+    if (!base) return false;
+    let url;
+    try {
+        url = new URL('/', base).toString();
+    } catch {
+        url = `${String(base).replace(/\/+$/, '')}/`;
+    }
+
+    const res = await axios.get(url, {
+        timeout: Math.max(3000, getAiRequestTimeoutMs('health')),
+        validateStatus: () => true,
+    });
+
+    return (
+        res.status === 200
+        && res?.data?.ok === true
+        && String(res?.data?.service || '').toLowerCase() === 'ai-engine'
+        && typeof res?.data?.endpoints === 'object'
+        && !!res?.data?.endpoints?.health
+        && !!res?.data?.endpoints?.predict
+    );
+}
+
 async function checkAIHealth() {
     // Manual-equivalent wake check:
     // Keep polling the ai-engine root URL until it returns the expected JSON.
@@ -318,18 +342,20 @@ async function checkAIHealth() {
         }
     }
 
-    let url;
     try {
-        url = new URL('/', base).toString();
-    } catch {
-        url = `${String(base).replace(/\/+$/, '')}/`;
-    }
+        const rootOk = await probeAiRootReady(base);
+        if (rootOk) {
+            if (!isAIReady) log.info('[INIT] AI Engine Online');
+            isAIReady = true;
+            return;
+        }
 
-    try {
-        const res = await axios.get(url, {
+        // If root isn't ready, apply a 429-aware backoff by probing root again later.
+        // (Rate limiting can happen at the edge before the request reaches gunicorn.)
+        const res = await axios.get(new URL('/health', base).toString(), {
             timeout: Math.max(3000, getAiRequestTimeoutMs('health')),
             validateStatus: () => true,
-        });
+        }).catch((e) => e?.response || null);
 
         if (res?.status === 429) {
             const delayMs = Math.max(AI_WAKE_POLL_MS, getRetryAfterMsFromHeaders(res?.headers, 60_000));
@@ -338,20 +364,6 @@ async function checkAIHealth() {
             setTimeout(() => {
                 checkAIHealth().catch(() => void 0);
             }, delayMs);
-            return;
-        }
-
-        const ready =
-            res.status === 200
-            && res?.data?.ok === true
-            && String(res?.data?.service || '').toLowerCase() === 'ai-engine'
-            && typeof res?.data?.endpoints === 'object'
-            && !!res?.data?.endpoints?.health
-            && !!res?.data?.endpoints?.predict;
-
-        if (ready) {
-            if (!isAIReady) log.info('[INIT] AI Engine Online');
-            isAIReady = true;
             return;
         }
     } catch {
@@ -451,6 +463,27 @@ async function pollAiHealthOnce({ load = false } = {}) {
             const minMs = isHostedEnvironment() ? 60_000 : 5_000;
             const delayMs = Math.max(minMs, getRetryAfterMsFromHeaders(res?.headers, 60_000));
             aiHealthPenaltyUntilMs = Math.max(aiHealthPenaltyUntilMs, Date.now() + delayMs);
+
+            // Fall back to root signature: if '/' is reachable/healthy, treat AI as ready
+            // even if '/health' is being rate-limited at the edge.
+            try {
+                const base = String(getAiServiceUrl() || '').trim();
+                if (base) {
+                    const rootOk = await probeAiRootReady(base);
+                    if (rootOk) {
+                        aiStatus.ok = true;
+                        aiStatus.modelLoaded = null;
+                        aiStatus.threshold = null;
+                        aiStatus.lastError = null;
+                        aiStatus.lastOkAt = nowIso;
+                        isAIReady = true;
+                        return;
+                    }
+                }
+            } catch {
+                // best-effort
+            }
+
             aiStatus.ok = false;
             aiStatus.modelLoaded = null;
             aiStatus.threshold = null;
@@ -629,7 +662,7 @@ function startAiKeepAlive() {
 // Default polling cadence:
 // - Hosted envs: keep it slow to avoid 429s (and because cold-starts take time anyway).
 // - Local dev: faster feedback.
-const defaultAiPollMs = isHostedEnvironment() ? 60_000 : 15_000;
+const defaultAiPollMs = isHostedEnvironment() ? 300_000 : 15_000;
 setInterval(() => {
     // Frequent polling should be "light" (no model warmup flag) to avoid 429s.
     pollAiHealthOnce({ load: false }).catch(() => void 0);
