@@ -654,7 +654,10 @@ export default function Forensics() {
           filled.push({
             key,
             label: bucketLabelFromKey(key, serverBucket),
-            attacks: counts.get(key) || 0,
+            attacks: (() => {
+              const v = counts.get(key);
+              return Number.isFinite(v) ? v : 0;
+            })(),
           });
 
           if (serverBucket === 'hour') cursor = new Date(cursor.getTime() + 60 * 60 * 1000);
@@ -707,7 +710,7 @@ export default function Forensics() {
         const idx = prev.findIndex((b) => b && b.key === key);
         if (idx === -1) return prev;
         const next = prev.slice();
-        next[idx] = { ...next[idx], attacks: (next[idx].attacks || 0) + 1 };
+        next[idx] = { ...next[idx], attacks: (Number(next[idx].attacks) || 0) + 1 };
         return next;
       });
 
@@ -1039,7 +1042,13 @@ export default function Forensics() {
         <div className="h-56 min-w-0">
           <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={224}>
             <BarChart data={timeline}>
-              <XAxis dataKey="label" stroke="#444" fontSize={12} interval={2} />
+              <XAxis
+                dataKey="key"
+                stroke="#444"
+                fontSize={12}
+                interval="preserveStartEnd"
+                tickFormatter={(v) => bucketLabelFromKey(v, timelineMeta?.bucket || 'hour')}
+              />
               <YAxis stroke="#444" fontSize={12} allowDecimals={false} />
               <Tooltip
                 contentStyle={{
@@ -1050,6 +1059,8 @@ export default function Forensics() {
                   backdropFilter: 'blur(12px)',
                 }}
                 itemStyle={{ color: '#e2e8f0' }}
+                labelFormatter={(v) => bucketLabelFromKey(v, timelineMeta?.bucket || 'hour')}
+                formatter={(value) => [value, 'Attacks']}
               />
               <Bar dataKey="attacks" fill="#8b5cf6" />
             </BarChart>
