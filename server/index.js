@@ -2970,3 +2970,59 @@ app.get('/api/threats/count', async (req, res) => {
         return res.status(500).json({ ok: false, error: String(e) });
     }
 });
+
+// --- REST API (Packet Count) ---
+// GET /api/packets/count?sinceHours=24
+// Returns the total number of packets in the given window.
+// If sinceHours is omitted, returns the all-time total for the owner.
+app.get('/api/packets/count', async (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+
+        const auth = await getAuthContextFromHeaders(req.headers);
+
+        const sinceHoursRaw = typeof req.query.sinceHours === 'string' ? req.query.sinceHours : '';
+        const sinceHoursTrim = String(sinceHoursRaw || '').trim();
+        let sinceHours = null;
+
+        if (sinceHoursTrim) {
+            const parsed = parseInt(sinceHoursTrim, 10);
+            if (Number.isFinite(parsed)) sinceHours = Math.max(1, Math.min(parsed, 168));
+        }
+
+        const to = new Date();
+        const from = sinceHours != null ? new Date(to.getTime() - sinceHours * 60 * 60 * 1000) : null;
+
+        if (mongoUrl) {
+            await waitForMongoConnected(25_000);
+            if (!isMongoConnected()) {
+                res.set('Retry-After', '3');
+                return res.status(503).json({ ok: false, error: 'MongoDB is still connecting; retry shortly' });
+            }
+
+            const match = {
+                owner_user_id: auth.ownerUserId,
+            };
+            if (from) match.timestamp = { $gte: from, $lt: to };
+
+            const totalPackets = await Packet.countDocuments(match);
+            return res.json({ ok: true, source: 'mongo', sinceHours, totalPackets });
+        }
+
+        // Memory fallback: count from in-memory history.
+        const filter = {
+            limit: 50_000,
+            owner_user_id: auth.ownerUserId,
+            is_anomaly: null,
+            source_ip: null,
+            since: from || null,
+        };
+        const packets = memoryQueryPackets(filter);
+        const totalPackets = Array.isArray(packets) ? packets.length : 0;
+        return res.json({ ok: true, source: 'memory', sinceHours, totalPackets });
+    } catch (e) {
+        return res.status(500).json({ ok: false, error: String(e) });
+    }
+});

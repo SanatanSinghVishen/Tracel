@@ -27,8 +27,8 @@ export default function Dashboard() {
   const [attackSimEnabled, setAttackSimEnabled] = useState(false);
   const [uptimeStartMs, setUptimeStartMs] = useState(0);
 
-  const threatsRefreshTimerRef = useRef(null);
-  const lastThreatsRefreshMsRef = useRef(0);
+  const countsRefreshTimerRef = useRef(null);
+  const lastCountsRefreshMsRef = useRef(0);
 
   // --- System Bootup Overlay (Render AI cold-start handling) ---
   const [bootVisible, setBootVisible] = useState(true);
@@ -96,6 +96,9 @@ export default function Dashboard() {
         const threatsCountUrl = new URL('/api/threats/count', base);
         threatsCountUrl.searchParams.set('sinceHours', '24');
 
+        const packetsCountUrl = new URL('/api/packets/count', base);
+        // Total Packets KPI is all-time total.
+
         async function fetchWithRetry(url, options) {
           const attempts = 3;
           for (let i = 0; i < attempts; i += 1) {
@@ -107,13 +110,15 @@ export default function Dashboard() {
         }
 
         const headers = await buildAuthHeaders(isLoaded ? getToken : null, anonId);
-        const [res, intelRes] = await Promise.all([
+        const [res, threatsRes, packetsRes] = await Promise.all([
           fetch(u.toString(), { headers, credentials: 'include', cache: 'no-store' }),
           fetchWithRetry(threatsCountUrl.toString(), { headers, credentials: 'include', cache: 'no-store' }),
+          fetchWithRetry(packetsCountUrl.toString(), { headers, credentials: 'include', cache: 'no-store' }),
         ]);
 
         const data = await res.json().catch(() => ({}));
-        const intelData = await intelRes.json().catch(() => ({}));
+        const threatsData = await threatsRes.json().catch(() => ({}));
+        const packetsCountData = await packetsRes.json().catch(() => ({}));
         if (!res.ok) return;
 
         const packets = Array.isArray(data.packets) ? data.packets : [];
@@ -126,8 +131,8 @@ export default function Dashboard() {
         setTrafficData(last60);
         setCurrentPacket(packets[0] || null);
 
-        const sessionPackets = typeof data?.session?.packets === 'number' ? data.session.packets : null;
-        const intelThreats24h = typeof intelData?.totalThreats === 'number' ? intelData.totalThreats : null;
+        const mongoPacketsTotal = typeof packetsCountData?.totalPackets === 'number' ? packetsCountData.totalPackets : null;
+        const mongoThreats24h = typeof threatsData?.totalThreats === 'number' ? threatsData.totalThreats : null;
 
         const sessionStartedAt = typeof data?.session?.startedAt === 'string' ? data.session.startedAt : null;
         if (sessionStartedAt) {
@@ -138,9 +143,9 @@ export default function Dashboard() {
         const threatsFromPackets = packets.reduce((acc, p) => acc + (p?.is_anomaly ? 1 : 0), 0);
         setStats((s) => ({
           ...s,
-          packets: sessionPackets ?? packets.length,
+          packets: mongoPacketsTotal ?? packets.length,
           // Threats KPI should be Mongo-backed for correctness.
-          threats: intelThreats24h ?? threatsFromPackets,
+          threats: mongoThreats24h ?? threatsFromPackets,
         }));
 
         setLogs(() => {
@@ -162,11 +167,11 @@ export default function Dashboard() {
     };
   }, [connection.serverUrl, isLoaded, getToken, anonId]);
 
-  // Cleanup any pending threats refresh timer.
+  // Cleanup any pending counts refresh timer.
   useEffect(() => {
     return () => {
-      if (threatsRefreshTimerRef.current) window.clearTimeout(threatsRefreshTimerRef.current);
-      threatsRefreshTimerRef.current = null;
+      if (countsRefreshTimerRef.current) window.clearTimeout(countsRefreshTimerRef.current);
+      countsRefreshTimerRef.current = null;
     };
   }, []);
 
@@ -201,8 +206,8 @@ export default function Dashboard() {
       }
 
       setStats((prev) => {
-        const nextPackets = typeof data?.session_total_packets === 'number' ? data.session_total_packets : prev.packets + 1;
-        // Threat KPI comes from Mongo (24h window). Do not increment locally.
+        // Packets + threats counts come from Mongo. Do not increment locally.
+        const nextPackets = prev.packets;
         const nextThreats = prev.threats;
 
         return {
@@ -212,31 +217,42 @@ export default function Dashboard() {
         };
       });
 
-      // If a new threat arrived, refresh the 24h threat count from the server (debounced).
-      if (data?.is_anomaly) {
-        const now = Date.now();
-        if (now - lastThreatsRefreshMsRef.current >= 2000 && !threatsRefreshTimerRef.current) {
-          threatsRefreshTimerRef.current = window.setTimeout(async () => {
-            threatsRefreshTimerRef.current = null;
-            lastThreatsRefreshMsRef.current = Date.now();
+      // Refresh counts from Mongo (debounced). This keeps KPIs correct without relying on
+      // in-memory increments and prevents drift across refreshes.
+      const now = Date.now();
+      if (now - lastCountsRefreshMsRef.current >= 2000 && !countsRefreshTimerRef.current) {
+        countsRefreshTimerRef.current = window.setTimeout(async () => {
+          countsRefreshTimerRef.current = null;
+          lastCountsRefreshMsRef.current = Date.now();
 
-            try {
-              const base = connection.serverUrl || 'http://localhost:3000';
-              const url = new URL('/api/threats/count', base);
-              url.searchParams.set('sinceHours', '24');
-              url.searchParams.set('_', String(Date.now()));
+          try {
+            const base = connection.serverUrl || 'http://localhost:3000';
+            const threatsUrl = new URL('/api/threats/count', base);
+            threatsUrl.searchParams.set('sinceHours', '24');
+            threatsUrl.searchParams.set('_', String(Date.now()));
 
-              const headers = await buildAuthHeaders(isLoaded ? getToken : null, anonId);
-              const res = await fetch(url.toString(), { headers, credentials: 'include', cache: 'no-store' });
-              const body = await res.json().catch(() => ({}));
-              if (res.ok && typeof body?.totalThreats === 'number') {
-                setStats((s) => ({ ...s, threats: body.totalThreats }));
-              }
-            } catch {
-              // ignore
-            }
-          }, 650);
-        }
+            const packetsUrl = new URL('/api/packets/count', base);
+            packetsUrl.searchParams.set('_', String(Date.now()));
+
+            const headers = await buildAuthHeaders(isLoaded ? getToken : null, anonId);
+
+            const [threatsRes, packetsRes] = await Promise.all([
+              fetch(threatsUrl.toString(), { headers, credentials: 'include', cache: 'no-store' }),
+              fetch(packetsUrl.toString(), { headers, credentials: 'include', cache: 'no-store' }),
+            ]);
+
+            const threatsBody = await threatsRes.json().catch(() => ({}));
+            const packetsBody = await packetsRes.json().catch(() => ({}));
+
+            setStats((s) => ({
+              ...s,
+              packets: typeof packetsBody?.totalPackets === 'number' ? packetsBody.totalPackets : s.packets,
+              threats: typeof threatsBody?.totalThreats === 'number' ? threatsBody.totalThreats : s.threats,
+            }));
+          } catch {
+            // ignore
+          }
+        }, 650);
       }
       setTrafficData((prev) => [...prev, data].slice(-60));
       setLogs((prev) => {
