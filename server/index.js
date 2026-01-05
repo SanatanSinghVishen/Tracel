@@ -115,6 +115,18 @@ function getServiceExternalOrigin() {
     }
 }
 
+function normalizeHttpBase(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return null;
+    // If the user provides a Render internal address like "service-abcd:1234",
+    // assume http://. new URL() requires a scheme.
+    if (/^https?:\/\//i.test(s)) return s;
+    if (/^[a-z0-9.-]+:\d+$/i.test(s)) return `http://${s}`;
+    // As a best-effort, if it's a bare hostname without scheme.
+    if (/^[a-z0-9.-]+$/i.test(s)) return `http://${s}`;
+    return s;
+}
+
 let lastAiConfigWarnAt = 0;
 function warnAiConfigOncePerInterval(message, meta) {
     const now = Date.now();
@@ -125,7 +137,7 @@ function warnAiConfigOncePerInterval(message, meta) {
 
 function getAiPredictUrl() {
     // Prefer AI_SERVICE_URL as the canonical ai-engine base URL.
-    const svc = String(process.env.AI_SERVICE_URL || '').trim();
+    const svc = normalizeHttpBase(process.env.AI_SERVICE_URL);
     if (svc) {
         try {
             const candidate = new URL('/predict', svc).toString();
@@ -587,7 +599,7 @@ function getAiBaseUrl() {
     const explicitPredict = getAiPredictUrl();
     if (explicitPredict) return String(explicitPredict).replace(/\/predict\/?$/i, '');
 
-    const base = String(process.env.AI_ENGINE_URL || '').trim();
+    const base = normalizeHttpBase(process.env.AI_ENGINE_URL);
     if (base) return String(base).replace(/\/predict\/?$/i, '');
 
     return isHostedEnvironment() ? null : 'http://127.0.0.1:5000';
@@ -596,7 +608,7 @@ function getAiBaseUrl() {
 function getAiServiceUrl() {
     // Preferred for the wake-up chain: base origin of the AI service.
     // Keep compatibility with existing AI_ENGINE_URL/AI_PREDICT_URL setup.
-    const raw = String(process.env.AI_SERVICE_URL || '').trim();
+    const raw = normalizeHttpBase(process.env.AI_SERVICE_URL);
     if (raw) {
         try {
             // Normalize to origin (strip any path).

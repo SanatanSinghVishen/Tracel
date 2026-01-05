@@ -27,8 +27,17 @@ function getServiceExternalOrigin() {
     }
 }
 
+function normalizeHttpBase(raw) {
+    const s = String(raw || '').trim();
+    if (!s) return null;
+    if (/^https?:\/\//i.test(s)) return s;
+    if (/^[a-z0-9.-]+:\d+$/i.test(s)) return `http://${s}`;
+    if (/^[a-z0-9.-]+$/i.test(s)) return `http://${s}`;
+    return s;
+}
+
 function getAiServiceUrl() {
-    const raw = String(process.env.AI_SERVICE_URL || '').trim();
+    const raw = normalizeHttpBase(process.env.AI_SERVICE_URL);
     if (!raw) return null;
     try {
         return new URL(raw).origin;
