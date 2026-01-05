@@ -257,49 +257,25 @@ const aiStatus = {
 // Used by the dashboard to show a boot overlay while the separate ai-engine service wakes.
 let isAIReady = false;
 
-let aiHealthBackoffUntilMs = 0;
-let aiHealthBackoffLevel = 0;
-
-function enterAiPenaltyBox() {
-    aiHealthBackoffUntilMs = Date.now() + 60_000;
-    aiHealthBackoffLevel = Math.min(aiHealthBackoffLevel + 1, 6);
-    log.warn('Rate limit hit (429). Pausing AI health checks for 60s.');
-}
-
-function computeRetryDelayMsFrom429(res) {
-    try {
-        const retryAfterRaw = res?.headers?.['retry-after'];
-        const retryAfter = Number(retryAfterRaw);
-        if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter * 1000;
-    } catch {
-        // ignore
-    }
-    return 10_000;
-}
+const AI_WAKE_POLL_MS = Math.max(15_000, parseInt(String(process.env.AI_HEALTH_POLL_MS || '15000'), 10) || 15_000);
 
 async function checkAIHealth() {
-    // Required: call AI_SERVICE_URL/health and keep retrying until it answers.
+    // Manual-equivalent wake check:
+    // Keep polling the ai-engine root URL until it returns the expected JSON.
     const base = String(process.env.AI_SERVICE_URL || '').trim();
     if (!base) {
         log.info('[INIT] Waiting for AI...');
         setTimeout(() => {
             checkAIHealth().catch(() => void 0);
-        }, 3000);
-        return;
-    }
-
-    if (Date.now() < aiHealthBackoffUntilMs) {
-        setTimeout(() => {
-            checkAIHealth().catch(() => void 0);
-        }, 3000);
+        }, AI_WAKE_POLL_MS);
         return;
     }
 
     let url;
     try {
-        url = new URL('/health', base).toString();
+        url = new URL('/', base).toString();
     } catch {
-        url = `${String(base).replace(/\/+$/, '')}/health`;
+        url = `${String(base).replace(/\/+$/, '')}/`;
     }
 
     try {
@@ -308,19 +284,17 @@ async function checkAIHealth() {
             validateStatus: () => true,
         });
 
-        if (res.status === 200) {
+        const ready =
+            res.status === 200
+            && res?.data?.ok === true
+            && String(res?.data?.service || '').toLowerCase() === 'ai-engine'
+            && typeof res?.data?.endpoints === 'object'
+            && !!res?.data?.endpoints?.health
+            && !!res?.data?.endpoints?.predict;
+
+        if (ready) {
             if (!isAIReady) log.info('[INIT] AI Engine Online');
             isAIReady = true;
-            aiHealthBackoffUntilMs = 0;
-            aiHealthBackoffLevel = 0;
-            return;
-        }
-
-        if (res.status === 429) {
-            enterAiPenaltyBox();
-            setTimeout(() => {
-                checkAIHealth().catch(() => void 0);
-            }, 60_000);
             return;
         }
     } catch {
@@ -330,7 +304,7 @@ async function checkAIHealth() {
     log.info('[INIT] Waiting for AI...');
     setTimeout(() => {
         checkAIHealth().catch(() => void 0);
-    }, 3000);
+    }, AI_WAKE_POLL_MS);
 }
 
 function getAiRequestTimeoutMs(kind = 'health') {
@@ -360,8 +334,6 @@ let lastAiStatusBroadcastOk = null;
 async function pollAiHealthOnce({ load = false } = {}) {
     const nowIso = new Date().toISOString();
     aiStatus.lastCheckedAt = nowIso;
-
-    if (Date.now() < aiHealthBackoffUntilMs) return;
 
     if (isAiDisabled()) {
         aiStatus.ok = false;
@@ -404,16 +376,6 @@ async function pollAiHealthOnce({ load = false } = {}) {
             validateStatus: () => true,
         });
 
-        if (res?.status === 429) {
-            aiStatus.ok = false;
-            aiStatus.modelLoaded = null;
-            aiStatus.threshold = null;
-            aiStatus.lastError = { message: 'AI rate limited (429)', code: 'AI_RATE_LIMITED', status: 429 };
-            isAIReady = false;
-            enterAiPenaltyBox();
-            return;
-        }
-
         // Support both:
         // - ai-engine detailed health (GET /health?load=1) -> { ok: true, modelLoaded: ... }
         // - ai-engine lightweight health (GET /health) -> { status: "running" }
@@ -445,10 +407,6 @@ async function pollAiHealthOnce({ load = false } = {}) {
         // This avoids the overlay being stuck if AI_SERVICE_URL is unset but AI_HEALTH_URL works.
         if (ok) isAIReady = true;
 
-        if (ok) {
-            aiHealthBackoffUntilMs = 0;
-            aiHealthBackoffLevel = 0;
-        }
     } catch (e) {
         aiStatus.ok = false;
         aiStatus.modelLoaded = null;
@@ -458,8 +416,6 @@ async function pollAiHealthOnce({ load = false } = {}) {
             code: e?.code,
             status: e?.response?.status,
         };
-
-        if (e?.response?.status === 429) enterAiPenaltyBox();
     }
 
     // Broadcast only when ok-state flips.
@@ -508,12 +464,12 @@ function getAiServiceUrl() {
 }
 
 async function wakeUpAIService() {
-    // Best-effort wake-up ping: should not trigger heavy ML work.
+    // Best-effort wake-up ping: match the manual wake check by hitting '/'.
     try {
         if (isAiDisabled()) return;
         const base = getAiServiceUrl();
         if (!base) return;
-        const u = new URL('/health', base);
+        const u = new URL('/', base);
         await axios.get(u.toString(), { timeout: getAiRequestTimeoutMs('health') });
     } catch {
         // best-effort only
@@ -530,7 +486,7 @@ function startAiKeepAlive() {
     }, 10 * 60 * 1000);
 }
 
-// Default to 15s between checks to avoid Render/Cloudflare 429 loops.
+// Default to 15s between checks.
 const defaultAiPollMs = 15_000;
 setInterval(() => {
     // Frequent polling should be "light" (no model warmup flag) to avoid 429s.
