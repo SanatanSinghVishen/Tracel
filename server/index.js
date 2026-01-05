@@ -262,13 +262,34 @@ const AI_WAKE_POLL_MS = Math.max(15_000, parseInt(String(process.env.AI_HEALTH_P
 async function checkAIHealth() {
     // Manual-equivalent wake check:
     // Keep polling the ai-engine root URL until it returns the expected JSON.
-    const base = String(process.env.AI_SERVICE_URL || '').trim();
+    const base = String(getAiServiceUrl() || '').trim();
     if (!base) {
         log.info('[INIT] Waiting for AI...');
         setTimeout(() => {
             checkAIHealth().catch(() => void 0);
         }, AI_WAKE_POLL_MS);
         return;
+    }
+
+    // Guard against accidentally pointing at this backend.
+    const ext = getServiceExternalOrigin();
+    if (ext) {
+        try {
+            if (new URL(base).origin === ext) {
+                warnAiConfigOncePerInterval('[AI] Misconfigured AI service URL: points to this backend; set AI_SERVICE_URL or AI_ENGINE_URL to your ai-engine service URL', {
+                    AI_SERVICE_URL: String(process.env.AI_SERVICE_URL || '').trim() || undefined,
+                    AI_ENGINE_URL: String(process.env.AI_ENGINE_URL || '').trim() || undefined,
+                    RENDER_EXTERNAL_URL: String(process.env.RENDER_EXTERNAL_URL || '').trim() || undefined,
+                });
+                log.info('[INIT] Waiting for AI...');
+                setTimeout(() => {
+                    checkAIHealth().catch(() => void 0);
+                }, AI_WAKE_POLL_MS);
+                return;
+            }
+        } catch {
+            // best-effort
+        }
     }
 
     let url;
@@ -1593,7 +1614,8 @@ app.get('/api/status', async (req, res) => {
         const auth = await getAuthContextFromHeaders(req.headers);
 
         const aiConfigured = !!(
-            String(process.env.AI_ENGINE_URL || '').trim()
+            String(process.env.AI_SERVICE_URL || '').trim()
+            || String(process.env.AI_ENGINE_URL || '').trim()
             || String(process.env.AI_PREDICT_URL || '').trim()
             || String(process.env.AI_HEALTH_URL || '').trim()
         );
