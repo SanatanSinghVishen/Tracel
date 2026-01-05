@@ -1422,7 +1422,7 @@ export default function Forensics() {
           ) : null}
 
           {intelExpanded ? (
-          <div className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-3">
+          <div className="mt-5 grid grid-cols-1 lg:grid-cols-12 gap-3 items-start">
             {/* Hostile IPs */}
             <div className="lg:col-span-7 glass rounded-2xl border border-white/10 p-4 hover:bg-white/10 transition hover-lift">
               <div className="flex items-start justify-between gap-3">
@@ -1552,7 +1552,7 @@ export default function Forensics() {
             </div>
 
             {/* Origins */}
-            <div className="lg:col-span-7 glass rounded-2xl border border-white/10 p-4 hover:bg-white/10 transition hover-lift flex flex-col">
+            <div className="lg:col-span-7 glass rounded-2xl border border-white/10 p-4 hover:bg-white/10 transition hover-lift flex flex-col max-h-[28rem]">
               <div className="shrink-0">
                 <div className="text-xs text-slate-400 uppercase tracking-wider">Origins</div>
                 <div className="mt-0.5 text-sm font-semibold text-white">Where attacks come from</div>
