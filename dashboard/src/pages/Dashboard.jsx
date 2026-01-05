@@ -42,8 +42,8 @@ export default function Dashboard() {
         const url = new URL('/api/status', base);
         url.searchParams.set('_', String(Date.now()));
 
-        const headers = await buildAuthHeaders(isLoaded ? getToken : null, anonId);
-        const res = await fetch(url.toString(), { headers, credentials: 'include', cache: 'no-store' });
+        // Public endpoint: avoid Authorization headers to prevent CORS preflight spam.
+        const res = await fetch(url.toString(), { credentials: 'include', cache: 'no-store' });
         const data = await res.json().catch(() => ({}));
         if (cancelled) return;
 
@@ -74,6 +74,7 @@ export default function Dashboard() {
       if (fadeTimer) window.clearTimeout(fadeTimer);
     };
   }, [connection.serverUrl, isLoaded, getToken, anonId, bootFading]);
+  // Intentionally does NOT depend on auth/token to avoid preflight requests.
 
   // Load recent history so UI doesn't reset on refresh/navigation.
   useEffect(() => {
