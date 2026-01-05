@@ -392,8 +392,21 @@ async function pollAiHealthOnce({ load = false } = {}) {
     }
 
     try {
-        const res = await axios.get(healthUrl, { timeout: getAiRequestTimeoutMs('health') });
-        const ok = !!res?.data?.ok;
+        const res = await axios.get(healthUrl, {
+            timeout: getAiRequestTimeoutMs('health'),
+            validateStatus: () => true,
+        });
+
+        // Support both:
+        // - ai-engine detailed health (GET /health?load=1) -> { ok: true, modelLoaded: ... }
+        // - ai-engine lightweight health (GET /health) -> { status: "running" }
+        const ok =
+            res?.status === 200
+            && (
+                res?.data?.ok === true
+                || String(res?.data?.status || '').toLowerCase() === 'running'
+            );
+
         const modelLoaded = typeof res?.data?.modelLoaded === 'boolean' ? res.data.modelLoaded : null;
         const thrRaw = res?.data?.threshold;
         const threshold = Number(thrRaw);
@@ -401,15 +414,24 @@ async function pollAiHealthOnce({ load = false } = {}) {
         aiStatus.ok = ok;
         aiStatus.modelLoaded = modelLoaded;
         aiStatus.threshold = Number.isFinite(threshold) ? threshold : null;
-        aiStatus.lastError = null;
+        aiStatus.lastError = ok
+            ? null
+            : {
+                message: `AI health returned ${res?.status}`,
+                code: 'AI_HEALTH_NOT_OK',
+                status: res?.status,
+              };
+
         if (ok) aiStatus.lastOkAt = nowIso;
 
         // Treat a successful health check as "ready" for the boot overlay.
         // This avoids the overlay being stuck if AI_SERVICE_URL is unset but AI_HEALTH_URL works.
         if (ok) isAIReady = true;
 
-        aiHealthBackoffUntilMs = 0;
-        aiHealthBackoffLevel = 0;
+        if (ok) {
+            aiHealthBackoffUntilMs = 0;
+            aiHealthBackoffLevel = 0;
+        }
     } catch (e) {
         aiStatus.ok = false;
         aiStatus.modelLoaded = null;
