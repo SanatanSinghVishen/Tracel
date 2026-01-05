@@ -21,6 +21,7 @@ export default function Dashboard() {
   const { socket, connection } = useSocket();
   const anonId = useMemo(() => getOrCreateAnonId(), []);
   const [trafficView, setTrafficView] = useState(() => readDefaultTrafficView());
+  const [isMobile, setIsMobile] = useState(false);
   const [trafficData, setTrafficData] = useState([]);
   const [stats, setStats] = useState({ packets: 0, threats: 0, uptime: 0 });
   const [currentPacket, setCurrentPacket] = useState(null);
@@ -191,6 +192,30 @@ export default function Dashboard() {
   useEffect(() => {
     writeDefaultTrafficView(trafficView);
   }, [trafficView]);
+
+  // Mobile = < md breakpoint (Tailwind md starts at 768px)
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+
+    const media = window.matchMedia('(max-width: 767.98px)');
+    const apply = () => setIsMobile(!!media.matches);
+    apply();
+
+    if (typeof media.addEventListener === 'function') {
+      media.addEventListener('change', apply);
+      return () => media.removeEventListener('change', apply);
+    }
+
+    // Safari fallback
+    media.addListener(apply);
+    return () => media.removeListener(apply);
+  }, []);
+
+  // Never mount the 3D globe on mobile.
+  useEffect(() => {
+    if (!isMobile) return;
+    if (trafficView === 'globe') setTrafficView('feed');
+  }, [isMobile, trafficView]);
 
   // Uptime should reset when the server restarts.
   // We derive uptime from the server session start timestamp.
@@ -380,7 +405,49 @@ export default function Dashboard() {
             </div>
 
             <div className="w-full sm:w-auto">
-              <div className="flex items-center justify-between sm:justify-start gap-3">
+              {/* Mobile: stacked, larger touch targets */}
+              <div className="sm:hidden grid grid-cols-1 gap-2" role="group" aria-label="Attack simulation toggle">
+                <button
+                  type="button"
+                  aria-pressed={!attackSimEnabled}
+                  onClick={() => {
+                    if (!attackSimEnabled) return;
+                    setAttackSimEnabled(false);
+                    toggleAttack(false);
+                  }}
+                  className={
+                    `h-12 w-full flex items-center justify-center gap-2 rounded-xl border border-zinc-800 ` +
+                    `bg-zinc-950/60 text-sm font-semibold transition-all ` +
+                    `outline-none focus-visible:ring-2 focus-visible:ring-tracel-accent-blue/40 ` +
+                    (!attackSimEnabled ? 'text-white' : 'text-slate-300 hover:text-white')
+                  }
+                >
+                  <Shield size={16} className={!attackSimEnabled ? 'text-white' : 'text-slate-200'} />
+                  Defense
+                </button>
+
+                <button
+                  type="button"
+                  aria-pressed={attackSimEnabled}
+                  onClick={() => {
+                    if (attackSimEnabled) return;
+                    setAttackSimEnabled(true);
+                    toggleAttack(true);
+                  }}
+                  className={
+                    `h-12 w-full flex items-center justify-center gap-2 rounded-xl border border-zinc-800 ` +
+                    `bg-zinc-950/60 text-sm font-semibold transition-all ` +
+                    `outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 ` +
+                    (attackSimEnabled ? 'text-white' : 'text-slate-300 hover:text-white')
+                  }
+                >
+                  <Zap size={16} className={attackSimEnabled ? 'text-white' : 'text-slate-200'} />
+                  Attack
+                </button>
+              </div>
+
+              {/* Desktop/tablet: compact segmented control */}
+              <div className="hidden sm:flex items-center justify-between sm:justify-start gap-3">
                 <div
                   className="relative w-full sm:w-[320px] rounded-lg border border-zinc-800 bg-zinc-900 p-1"
                   role="group"
@@ -444,7 +511,7 @@ export default function Dashboard() {
       </div>
 
       {/* KPI Row */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
         <div className="glass-card glow-hover p-5 hover-lift">
           <p className="text-slate-400 text-xs uppercase tracking-wider">Total Packets</p>
           <p className="mt-2 text-2xl sm:text-3xl font-semibold text-white data-mono tabular-nums whitespace-nowrap leading-none">
@@ -501,12 +568,13 @@ export default function Dashboard() {
       </div>
 
       {/* Main Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 min-w-0 flex-1 min-h-0 items-stretch">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 min-w-0 flex-1 min-h-0 items-stretch">
         {/* Traffic */}
-        <div className="glass-card glow-hover lg:col-span-2 p-5 sm:p-6 flex flex-col min-h-0 h-full animate-fade-up">
+        <div className="glass-card glow-hover md:col-span-2 lg:col-span-3 p-5 sm:p-6 flex flex-col min-h-0 h-full animate-fade-up">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
             <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-              <Wifi size={16} className="text-slate-200" /> {trafficView === 'globe' ? 'Global Traffic' : 'Live Bandwidth'}
+              <Wifi size={16} className="text-slate-200" />{' '}
+              {trafficView === 'globe' ? 'Global Traffic' : trafficView === 'feed' ? 'Live Event Feed' : 'Live Bandwidth'}
             </h2>
             <div className="flex flex-wrap items-center gap-2">
               <div className="flex bg-zinc-900 p-1 rounded-lg border border-zinc-800">
@@ -519,15 +587,27 @@ export default function Dashboard() {
                 >
                   Bandwidth
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setTrafficView('globe')}
-                  className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
-                    trafficView === 'globe' ? 'bg-zinc-950/70 text-white' : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Globe
-                </button>
+                {isMobile ? (
+                  <button
+                    type="button"
+                    onClick={() => setTrafficView('feed')}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
+                      trafficView === 'feed' ? 'bg-zinc-950/70 text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Feed
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setTrafficView('globe')}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
+                      trafficView === 'globe' ? 'bg-zinc-950/70 text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Globe
+                  </button>
+                )}
               </div>
               <span className="text-xs px-2.5 py-1 bg-zinc-900 text-slate-200 rounded-lg border border-zinc-800">
                 <span
@@ -547,6 +627,62 @@ export default function Dashboard() {
             {trafficView === 'globe' ? (
               <div className="h-full min-h-0 overflow-hidden rounded-lg">
                 <TrafficGlobe />
+              </div>
+            ) : trafficView === 'feed' ? (
+              <div className="h-full min-h-0 overflow-y-auto scroll-hidden rounded-lg border border-zinc-800 bg-zinc-950/30 p-4">
+                {trafficData.length === 0 ? (
+                  <div className="space-y-3">
+                    <div className="h-4 w-2/3 skeleton" />
+                    <div className="h-4 w-5/6 skeleton" />
+                    <div className="h-4 w-3/4 skeleton" />
+                    <div className="h-4 w-1/2 skeleton" />
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {trafficData
+                      .slice()
+                      .reverse()
+                      .slice(0, 14)
+                      .map((p, i) => {
+                        const ts = new Date(p?.timestamp || Date.now()).toLocaleTimeString();
+                        const critical = !!p?.is_anomaly;
+                        const src = p?.source_ip || '—';
+                        const dst = p?.destination_ip || '—';
+                        const method = p?.method || '—';
+                        const bytes = typeof p?.bytes === 'number' ? `${p.bytes}B` : '—';
+                        return (
+                          <div
+                            key={`${p?.timestamp || 't'}-${p?.source_ip || 's'}-${i}`}
+                            className={
+                              'rounded-lg border px-3 py-2 ' +
+                              (critical
+                                ? 'border-red-500/25 bg-red-500/10'
+                                : 'border-white/10 bg-zinc-950/40')
+                            }
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="text-[11px] text-slate-400 data-mono">[{ts}]</div>
+                              <div className={
+                                'text-[10px] uppercase tracking-wider ' +
+                                (critical ? 'text-red-200' : 'text-slate-400')
+                              }>
+                                {critical ? 'Threat' : 'OK'}
+                              </div>
+                            </div>
+                            <div className="mt-1 text-sm text-slate-200">
+                              <span className="data-mono">{method}</span>{' '}
+                              <span className="text-slate-400">·</span>{' '}
+                              <span className="data-mono break-all">{src}</span>{' '}
+                              <span className="text-slate-400">→</span>{' '}
+                              <span className="data-mono break-all">{dst}</span>{' '}
+                              <span className="text-slate-400">·</span>{' '}
+                              <span className="data-mono">{bytes}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
               </div>
             ) : trafficData.length === 0 ? (
               <div className="h-full min-h-0 flex flex-col justify-center gap-3">
@@ -602,7 +738,7 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-4 min-h-0 h-full">
+        <div className="flex flex-col gap-4 min-h-0 h-full md:col-span-2 lg:col-span-1">
           {/* Logs */}
           <div className="glass-card glow-hover p-5 sm:p-6 flex flex-col min-h-0 h-full animate-fade-up">
             <h2 className="text-slate-400 mb-3 flex items-center gap-2 uppercase tracking-wider text-[10px]">

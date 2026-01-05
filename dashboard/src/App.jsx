@@ -1,6 +1,8 @@
-import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
-import { SignIn, SignUp, useUser } from '@clerk/clerk-react';
+import { useEffect, useMemo, useState } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
+import { SignIn, SignUp, UserButton, useUser } from '@clerk/clerk-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Menu, X } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import Forensics from './pages/Forensics';
@@ -51,15 +53,77 @@ function AuthShell({ children }) {
   );
 }
 
+function AppNavLink({ to, label, onNavigate }) {
+  return (
+    <NavLink
+      to={to}
+      onClick={onNavigate}
+      className={({ isActive }) =>
+        [
+          'flex items-center justify-between rounded-xl border px-4 py-3 text-sm font-semibold transition',
+          'outline-none focus-visible:ring-2 focus-visible:ring-tracel-accent-blue/40',
+          isActive
+            ? 'bg-zinc-950/70 text-white border-zinc-800'
+            : 'bg-zinc-950/40 text-slate-200 border-zinc-800 hover:bg-zinc-950/60',
+        ].join(' ')
+      }
+    >
+      <span>{label}</span>
+    </NavLink>
+  );
+}
+
 function AppShell() {
   const { pathname } = useLocation();
   const isDashboardRoute = pathname.startsWith('/dashboard');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const { user, isLoaded } = useUser();
+  const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL || '').trim();
+  const email = useMemo(
+    () =>
+      user?.primaryEmailAddress?.emailAddress ||
+      user?.emailAddresses?.[0]?.emailAddress ||
+      '',
+    [user]
+  );
+  const isAdmin =
+    isLoaded &&
+    !!user &&
+    adminEmail.length > 0 &&
+    email.toLowerCase() === adminEmail.toLowerCase();
+
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
 
   return (
     <SocketProvider>
       <div className="h-[100svh] min-h-[100svh] font-sans overflow-hidden bg-zinc-950 text-white">
-        <div className="h-full min-w-0 flex">
-          <Sidebar />
+        <div className="h-full min-w-0 flex flex-col md:flex-row">
+          {/* Desktop sidebar */}
+          <div className="hidden md:block">
+            <Sidebar />
+          </div>
+
+          {/* Mobile top bar */}
+          <div className="md:hidden shrink-0 border-b border-zinc-900/80 bg-zinc-950/60 backdrop-blur">
+            <div className="flex items-center justify-between px-4 py-3">
+              <button
+                type="button"
+                onClick={() => setMobileNavOpen(true)}
+                className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/50 text-slate-200"
+                aria-label="Open navigation"
+              >
+                <Menu size={18} />
+              </button>
+
+              <div className="text-sm font-semibold tracking-tight text-white">Tracel</div>
+
+              <div className="h-10 w-10 flex items-center justify-center">
+                {isLoaded && user ? <UserButton afterSignOutUrl="/" /> : null}
+              </div>
+            </div>
+          </div>
 
           <div className="flex-1 min-w-0 flex flex-col">
             <main
@@ -75,6 +139,67 @@ function AppShell() {
             </main>
           </div>
         </div>
+
+        {/* Mobile drawer */}
+        <AnimatePresence>
+          {mobileNavOpen ? (
+            <motion.div
+              className="fixed inset-0 z-[90]"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+            >
+              <button
+                type="button"
+                className="absolute inset-0 bg-zinc-950/70 backdrop-blur-sm"
+                aria-label="Close navigation"
+                onClick={() => setMobileNavOpen(false)}
+              />
+
+              <motion.aside
+                className="absolute left-0 top-0 h-full w-[min(88vw,360px)] bg-zinc-950/95 border-r border-zinc-900 p-4"
+                initial={{ x: -24, opacity: 0 }}
+                animate={{ x: 0, opacity: 1 }}
+                exit={{ x: -24, opacity: 0 }}
+                transition={{ type: 'tween', duration: 0.18 }}
+                role="dialog"
+                aria-modal="true"
+                aria-label="Navigation"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="text-lg font-semibold text-white">Navigation</div>
+                  <button
+                    type="button"
+                    onClick={() => setMobileNavOpen(false)}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/50 text-slate-200"
+                    aria-label="Close navigation"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <div className="mt-4 space-y-2">
+                  <AppNavLink to="/dashboard" label="Dashboard" onNavigate={() => setMobileNavOpen(false)} />
+                  <AppNavLink to="/forensics" label="Forensics" onNavigate={() => setMobileNavOpen(false)} />
+                  <AppNavLink to="/settings" label="Settings" onNavigate={() => setMobileNavOpen(false)} />
+                  <AppNavLink to="/about" label="About" onNavigate={() => setMobileNavOpen(false)} />
+                  <AppNavLink to="/contact" label="Contact" onNavigate={() => setMobileNavOpen(false)} />
+                  {isAdmin ? (
+                    <AppNavLink
+                      to="/contact-submissions"
+                      label="Contact Submissions"
+                      onNavigate={() => setMobileNavOpen(false)}
+                    />
+                  ) : null}
+                </div>
+
+                <div className="mt-6 border-t border-zinc-900 pt-4 text-xs text-slate-400">
+                  Swipe back or tap outside to close.
+                </div>
+              </motion.aside>
+            </motion.div>
+          ) : null}
+        </AnimatePresence>
 
         <ChatAssistant />
       </div>
