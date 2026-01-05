@@ -1783,6 +1783,10 @@ app.get('/api/status', async (req, res) => {
             ok: true,
             ai_ready: !!isAIReady,
             session: sid ? `sess:${sid}` : null,
+            build: {
+                commit: String(process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').trim() || null,
+                service: String(process.env.RENDER_SERVICE_NAME || '').trim() || null,
+            },
             auth: {
                 ownerUserId: auth.ownerUserId,
                 isAdmin: auth.isAdmin,
@@ -2488,7 +2492,89 @@ io.engine.on('headers', (headers, req) => {
 // AI engine status (reachability + model loaded)
 app.get('/api/ai/status', (req, res) => {
     res.set('Cache-Control', 'no-store');
-    return res.json({ ok: true, ai: aiStatus, urls: { predict: getAiPredictUrl(), health: getAiHealthUrl() } });
+    const probe = String(req.query.probe || '').trim() === '1';
+
+    const payload = {
+        ok: true,
+        ai: aiStatus,
+        urls: {
+            service: getAiServiceUrl(),
+            root: (() => {
+                const base = getAiServiceUrl();
+                if (!base) return null;
+                try {
+                    return new URL('/', base).toString();
+                } catch {
+                    return `${String(base).replace(/\/+$/, '')}/`;
+                }
+            })(),
+            predict: getAiPredictUrl(),
+            health: getAiHealthUrl(),
+        },
+        build: {
+            commit: String(process.env.RENDER_GIT_COMMIT || process.env.GIT_COMMIT || '').trim() || null,
+            service: String(process.env.RENDER_SERVICE_NAME || '').trim() || null,
+        },
+    };
+
+    if (!probe) return res.json(payload);
+
+    (async () => {
+        const base = String(getAiServiceUrl() || '').trim();
+        if (!base) return { root: null, health: null };
+
+        const rootUrl = (() => {
+            try {
+                return new URL('/', base).toString();
+            } catch {
+                return `${String(base).replace(/\/+$/, '')}/`;
+            }
+        })();
+
+        const healthUrl = getAiHealthUrl({ load: false });
+
+        const rootRes = await axios.get(rootUrl, {
+            timeout: Math.max(3000, getAiRequestTimeoutMs('health')),
+            validateStatus: () => true,
+        });
+
+        let rootJson = null;
+        try {
+            if (typeof rootRes?.data === 'object' && rootRes?.data) rootJson = rootRes.data;
+        } catch {
+            // best-effort
+        }
+
+        const healthRes = healthUrl
+            ? await axios.get(healthUrl, {
+                timeout: getAiRequestTimeoutMs('health'),
+                validateStatus: () => true,
+              })
+            : null;
+
+        return {
+            root: {
+                url: rootUrl,
+                status: rootRes?.status,
+                okSignature:
+                    rootRes?.status === 200
+                    && rootJson?.ok === true
+                    && String(rootJson?.service || '').toLowerCase() === 'ai-engine',
+                data: rootJson,
+                server: rootRes?.headers?.server || null,
+            },
+            health: healthUrl
+                ? {
+                    url: healthUrl,
+                    status: healthRes?.status,
+                    server: healthRes?.headers?.server || null,
+                    bodyType: typeof healthRes?.data,
+                  }
+                : null,
+        };
+    })()
+        .then((probeResult) => res.json({ ...payload, probe: probeResult }))
+        .catch((e) => res.json({ ...payload, probe_error: String(e?.message || e) }));
 });
 
 // --- REST API (Incident Timeline) ---
