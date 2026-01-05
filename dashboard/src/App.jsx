@@ -236,14 +236,15 @@ function GlobalScroller() {
   const shouldSmooth = !pathname.startsWith('/dashboard');
 
   useEffect(() => {
-    // Mobile browsers: prefer native scrolling (Lenis is wheel-focused).
-    // This also avoids cases where a custom wrapper prevents touch scrolling.
-    const isMobile =
+    // Touch devices (Android/iOS): always prefer native scrolling.
+    // Lenis with smoothTouch=false can block scrolling on touch browsers,
+    // especially in "desktop mode" where viewport width may be >= md.
+    const isTouchDevice =
       typeof window !== 'undefined' &&
-      typeof window.matchMedia === 'function' &&
-      window.matchMedia('(max-width: 767.98px)')?.matches;
+      ((typeof navigator !== 'undefined' && (navigator.maxTouchPoints || 0) > 0) ||
+        'ontouchstart' in window);
 
-    if (isMobile) {
+    if (isTouchDevice) {
       disableSmoothScroll();
       return undefined;
     }

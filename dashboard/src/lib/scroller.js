@@ -2,6 +2,8 @@ import Lenis from 'lenis';
 
 let lenis = null;
 let rafId = 0;
+let lastWrapper = null;
+let lastContent = null;
 
 function prefersReducedMotion() {
   try {
@@ -28,6 +30,9 @@ export function enableSmoothScroll(options = {}) {
 
   const { wrapper: _wrapperOpt, content: _contentOpt, ...rest } = options;
 
+  lastWrapper = wrapper || null;
+  lastContent = content || null;
+
   lenis = new Lenis({
     duration: 0.95,
     smoothWheel: true,
@@ -49,7 +54,43 @@ export function enableSmoothScroll(options = {}) {
 
 export function disableSmoothScroll() {
   if (typeof window === 'undefined') return;
-  if (!lenis) return;
+  // Even if Lenis was never created, make sure we don't leave the page in a
+  // scroll-locked state (some browsers keep stale styles after navigations).
+  const resetScrollLocks = () => {
+    try {
+      document.documentElement.style.overflow = '';
+      document.documentElement.style.height = '';
+      document.documentElement.style.position = '';
+      document.body.style.overflow = '';
+      document.body.style.height = '';
+      document.body.style.position = '';
+      document.body.style.top = '';
+      document.body.style.width = '';
+      document.body.style.touchAction = '';
+    } catch {
+      // ignore
+    }
+
+    try {
+      if (lastWrapper) {
+        lastWrapper.style.overflow = '';
+        lastWrapper.style.height = '';
+        lastWrapper.style.position = '';
+        lastWrapper.style.touchAction = '';
+      }
+      if (lastContent) {
+        lastContent.style.transform = '';
+        lastContent.style.willChange = '';
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  if (!lenis) {
+    resetScrollLocks();
+    return;
+  }
 
   if (rafId) {
     window.cancelAnimationFrame(rafId);
@@ -63,4 +104,6 @@ export function disableSmoothScroll() {
   }
 
   lenis = null;
+
+  resetScrollLocks();
 }
