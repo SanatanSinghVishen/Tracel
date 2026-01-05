@@ -257,11 +257,32 @@ const aiStatus = {
 // Used by the dashboard to show a boot overlay while the separate ai-engine service wakes.
 let isAIReady = false;
 
+let aiHealthBackoffUntilMs = 0;
+let aiHealthBackoffLevel = 0;
+
+function computeRetryDelayMsFrom429(res) {
+    try {
+        const retryAfterRaw = res?.headers?.['retry-after'];
+        const retryAfter = Number(retryAfterRaw);
+        if (Number.isFinite(retryAfter) && retryAfter > 0) return retryAfter * 1000;
+    } catch {
+        // ignore
+    }
+    return 10_000;
+}
+
 async function checkAIHealth() {
     // Required: call AI_SERVICE_URL/health and keep retrying until it answers.
     const base = String(process.env.AI_SERVICE_URL || '').trim();
     if (!base) {
         log.info('[INIT] Waiting for AI...');
+        setTimeout(() => {
+            checkAIHealth().catch(() => void 0);
+        }, 3000);
+        return;
+    }
+
+    if (Date.now() < aiHealthBackoffUntilMs) {
         setTimeout(() => {
             checkAIHealth().catch(() => void 0);
         }, 3000);
@@ -284,7 +305,16 @@ async function checkAIHealth() {
         if (res.status === 200) {
             if (!isAIReady) log.info('[INIT] AI Engine Online');
             isAIReady = true;
+            aiHealthBackoffUntilMs = 0;
+            aiHealthBackoffLevel = 0;
             return;
+        }
+
+        if (res.status === 429) {
+            aiHealthBackoffLevel = Math.min(aiHealthBackoffLevel + 1, 6);
+            const baseDelay = computeRetryDelayMsFrom429(res);
+            const delay = Math.min(baseDelay * (2 ** aiHealthBackoffLevel), 60_000);
+            aiHealthBackoffUntilMs = Date.now() + delay;
         }
     } catch {
         // fall through to retry
@@ -323,6 +353,8 @@ let lastAiStatusBroadcastOk = null;
 async function pollAiHealthOnce({ load = false } = {}) {
     const nowIso = new Date().toISOString();
     aiStatus.lastCheckedAt = nowIso;
+
+    if (Date.now() < aiHealthBackoffUntilMs) return;
 
     if (isAiDisabled()) {
         aiStatus.ok = false;
@@ -375,6 +407,9 @@ async function pollAiHealthOnce({ load = false } = {}) {
         // Treat a successful health check as "ready" for the boot overlay.
         // This avoids the overlay being stuck if AI_SERVICE_URL is unset but AI_HEALTH_URL works.
         if (ok) isAIReady = true;
+
+        aiHealthBackoffUntilMs = 0;
+        aiHealthBackoffLevel = 0;
     } catch (e) {
         aiStatus.ok = false;
         aiStatus.modelLoaded = null;
@@ -384,6 +419,13 @@ async function pollAiHealthOnce({ load = false } = {}) {
             code: e?.code,
             status: e?.response?.status,
         };
+
+        if (e?.response?.status === 429) {
+            aiHealthBackoffLevel = Math.min(aiHealthBackoffLevel + 1, 6);
+            const baseDelay = computeRetryDelayMsFrom429(e?.response);
+            const delay = Math.min(baseDelay * (2 ** aiHealthBackoffLevel), 60_000);
+            aiHealthBackoffUntilMs = Date.now() + delay;
+        }
     }
 
     // Broadcast only when ok-state flips.
@@ -454,10 +496,11 @@ function startAiKeepAlive() {
     }, 10 * 60 * 1000);
 }
 
+const defaultAiPollMs = isHostedEnvironment() ? 30_000 : 5000;
 setInterval(() => {
     // Frequent polling should be "light" (no model warmup flag) to avoid 429s.
     pollAiHealthOnce({ load: false }).catch(() => void 0);
-}, Math.max(2000, Math.min(parseInt(process.env.AI_HEALTH_POLL_MS || '5000', 10) || 5000, 60_000)));
+}, Math.max(2000, Math.min(parseInt(process.env.AI_HEALTH_POLL_MS || String(defaultAiPollMs), 10) || defaultAiPollMs, 60_000)));
 pollAiHealthOnce({ load: true }).catch(() => void 0);
 
 const memoryStore = new MemoryStore({
