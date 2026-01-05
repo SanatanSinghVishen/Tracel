@@ -444,7 +444,8 @@ async function pollAiHealthOnce({ load = false } = {}) {
         });
 
         if (res?.status === 429) {
-            const delayMs = getRetryAfterMsFromHeaders(res?.headers, 60_000);
+            const minMs = isHostedEnvironment() ? 60_000 : 5_000;
+            const delayMs = Math.max(minMs, getRetryAfterMsFromHeaders(res?.headers, 60_000));
             aiHealthPenaltyUntilMs = Math.max(aiHealthPenaltyUntilMs, Date.now() + delayMs);
             aiStatus.ok = false;
             aiStatus.modelLoaded = null;
@@ -491,7 +492,8 @@ async function pollAiHealthOnce({ load = false } = {}) {
 
     } catch (e) {
         if (e?.response?.status === 429) {
-            const delayMs = getRetryAfterMsFromHeaders(e?.response?.headers, 60_000);
+            const minMs = isHostedEnvironment() ? 60_000 : 5_000;
+            const delayMs = Math.max(minMs, getRetryAfterMsFromHeaders(e?.response?.headers, 60_000));
             aiHealthPenaltyUntilMs = Math.max(aiHealthPenaltyUntilMs, Date.now() + delayMs);
             aiStatus.ok = false;
             aiStatus.modelLoaded = null;
