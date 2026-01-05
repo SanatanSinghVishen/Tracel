@@ -2915,3 +2915,58 @@ app.get('/api/incidents/timeline', async (req, res) => {
         return res.status(500).json({ error: String(e) });
     }
 });
+
+// --- REST API (Threat Count) ---
+// GET /api/threats/count?sinceHours=24
+// Returns the total number of threat packets (is_anomaly=true) in the given window.
+// This is intentionally lightweight so the dashboard KPI can stay correct without
+// relying on AI report aggregates or in-memory counters.
+app.get('/api/threats/count', async (req, res) => {
+    try {
+        res.set('Cache-Control', 'no-store');
+        res.set('Pragma', 'no-cache');
+        res.set('Expires', '0');
+
+        const auth = await getAuthContextFromHeaders(req.headers);
+
+        const sinceHoursRaw = typeof req.query.sinceHours === 'string' ? req.query.sinceHours : '24';
+        let sinceHours = parseInt(String(sinceHoursRaw), 10);
+        if (!Number.isFinite(sinceHours)) sinceHours = 24;
+        sinceHours = Math.max(1, Math.min(sinceHours, 168));
+
+        const to = new Date();
+        const from = new Date(to.getTime() - sinceHours * 60 * 60 * 1000);
+
+        // Prefer MongoDB when configured. If configured but not connected yet,
+        // return 503 so clients can retry (same pattern as /api/threat-intel).
+        if (mongoUrl) {
+            await waitForMongoConnected(25_000);
+            if (!isMongoConnected()) {
+                res.set('Retry-After', '3');
+                return res.status(503).json({ ok: false, error: 'MongoDB is still connecting; retry shortly' });
+            }
+
+            const match = {
+                owner_user_id: auth.ownerUserId,
+                is_anomaly: true,
+                timestamp: { $gte: from, $lt: to },
+            };
+            const totalThreats = await Packet.countDocuments(match);
+            return res.json({ ok: true, source: 'mongo', sinceHours, totalThreats });
+        }
+
+        // Memory fallback: count only from in-memory history.
+        const filter = {
+            limit: 50_000,
+            owner_user_id: auth.ownerUserId,
+            is_anomaly: true,
+            source_ip: null,
+            since: from,
+        };
+        const packets = memoryQueryPackets(filter);
+        const totalThreats = (Array.isArray(packets) ? packets : []).filter((p) => p && p.is_anomaly).length;
+        return res.json({ ok: true, source: 'memory', sinceHours, totalThreats });
+    } catch (e) {
+        return res.status(500).json({ ok: false, error: String(e) });
+    }
+});

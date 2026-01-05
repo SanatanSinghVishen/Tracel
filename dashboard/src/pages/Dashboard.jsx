@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Cpu, Shield, ShieldAlert, Terminal, Wifi, Zap } from 'lucide-react';
@@ -26,6 +26,9 @@ export default function Dashboard() {
   const [logs, setLogs] = useState([]);
   const [attackSimEnabled, setAttackSimEnabled] = useState(false);
   const [uptimeStartMs, setUptimeStartMs] = useState(0);
+
+  const threatsRefreshTimerRef = useRef(null);
+  const lastThreatsRefreshMsRef = useRef(0);
 
   // --- System Bootup Overlay (Render AI cold-start handling) ---
   const [bootVisible, setBootVisible] = useState(true);
@@ -90,11 +93,10 @@ export default function Dashboard() {
         // Ensure refresh always pulls the latest snapshot (avoid disk cache).
         u.searchParams.set('_', String(Date.now()));
 
-        const intelUrl = new URL('/api/threat-intel', base);
-        intelUrl.searchParams.set('sinceHours', '24');
-        intelUrl.searchParams.set('limit', '10000');
+        const threatsCountUrl = new URL('/api/threats/count', base);
+        threatsCountUrl.searchParams.set('sinceHours', '24');
 
-        async function fetchIntelWithRetry(url, options) {
+        async function fetchWithRetry(url, options) {
           const attempts = 3;
           for (let i = 0; i < attempts; i += 1) {
             const res = await fetch(url, options);
@@ -107,7 +109,7 @@ export default function Dashboard() {
         const headers = await buildAuthHeaders(isLoaded ? getToken : null, anonId);
         const [res, intelRes] = await Promise.all([
           fetch(u.toString(), { headers, credentials: 'include', cache: 'no-store' }),
-          fetchIntelWithRetry(intelUrl.toString(), { headers, credentials: 'include', cache: 'no-store' }),
+          fetchWithRetry(threatsCountUrl.toString(), { headers, credentials: 'include', cache: 'no-store' }),
         ]);
 
         const data = await res.json().catch(() => ({}));
@@ -137,7 +139,7 @@ export default function Dashboard() {
         setStats((s) => ({
           ...s,
           packets: sessionPackets ?? packets.length,
-          // Match Forensics: Threat Intel total for last 24h.
+          // Threats KPI should be Mongo-backed for correctness.
           threats: intelThreats24h ?? threatsFromPackets,
         }));
 
@@ -159,6 +161,14 @@ export default function Dashboard() {
       cancelled = true;
     };
   }, [connection.serverUrl, isLoaded, getToken, anonId]);
+
+  // Cleanup any pending threats refresh timer.
+  useEffect(() => {
+    return () => {
+      if (threatsRefreshTimerRef.current) window.clearTimeout(threatsRefreshTimerRef.current);
+      threatsRefreshTimerRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     writeDefaultTrafficView(trafficView);
@@ -192,8 +202,8 @@ export default function Dashboard() {
 
       setStats((prev) => {
         const nextPackets = typeof data?.session_total_packets === 'number' ? data.session_total_packets : prev.packets + 1;
-        // Keep the threat KPI aligned to 24h intel. On live packets, increment on anomalies.
-        const nextThreats = data.is_anomaly ? prev.threats + 1 : prev.threats;
+        // Threat KPI comes from Mongo (24h window). Do not increment locally.
+        const nextThreats = prev.threats;
 
         return {
           ...prev,
@@ -201,6 +211,33 @@ export default function Dashboard() {
           threats: nextThreats,
         };
       });
+
+      // If a new threat arrived, refresh the 24h threat count from the server (debounced).
+      if (data?.is_anomaly) {
+        const now = Date.now();
+        if (now - lastThreatsRefreshMsRef.current >= 2000 && !threatsRefreshTimerRef.current) {
+          threatsRefreshTimerRef.current = window.setTimeout(async () => {
+            threatsRefreshTimerRef.current = null;
+            lastThreatsRefreshMsRef.current = Date.now();
+
+            try {
+              const base = connection.serverUrl || 'http://localhost:3000';
+              const url = new URL('/api/threats/count', base);
+              url.searchParams.set('sinceHours', '24');
+              url.searchParams.set('_', String(Date.now()));
+
+              const headers = await buildAuthHeaders(isLoaded ? getToken : null, anonId);
+              const res = await fetch(url.toString(), { headers, credentials: 'include', cache: 'no-store' });
+              const body = await res.json().catch(() => ({}));
+              if (res.ok && typeof body?.totalThreats === 'number') {
+                setStats((s) => ({ ...s, threats: body.totalThreats }));
+              }
+            } catch {
+              // ignore
+            }
+          }, 650);
+        }
+      }
       setTrafficData((prev) => [...prev, data].slice(-60));
       setLogs((prev) => {
         const ts = new Date(data.timestamp || Date.now()).toLocaleTimeString();
