@@ -77,6 +77,7 @@ function AppShell() {
   const { pathname } = useLocation();
   const isDashboardRoute = pathname.startsWith('/dashboard');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [isTouchDevice, setIsTouchDevice] = useState(false);
   const { user, isLoaded } = useUser();
   const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL || '').trim();
   const email = useMemo(
@@ -96,10 +97,25 @@ function AppShell() {
     setMobileNavOpen(false);
   }, [pathname]);
 
+  useEffect(() => {
+    const touch =
+      typeof window !== 'undefined' &&
+      ((typeof navigator !== 'undefined' && (navigator.maxTouchPoints || 0) > 0) || 'ontouchstart' in window);
+    setIsTouchDevice(!!touch);
+  }, []);
+
   return (
     <SocketProvider>
-      <div className="h-[100svh] min-h-[100svh] font-sans overflow-hidden bg-zinc-950 text-white">
-        <div className="h-full min-w-0 flex flex-col md:flex-row">
+      <div
+        className={
+          (
+            isTouchDevice
+              ? 'min-h-[100svh] overflow-x-hidden'
+              : 'h-[100svh] min-h-[100svh] overflow-hidden'
+          ) + ' font-sans bg-zinc-950 text-white'
+        }
+      >
+        <div className={(isTouchDevice ? 'min-h-[100svh]' : 'h-full') + ' min-w-0 flex flex-col md:flex-row'}>
           {/* Desktop sidebar */}
           <div className="hidden md:block">
             <Sidebar />
@@ -128,10 +144,15 @@ function AppShell() {
           <div className="flex-1 min-w-0 flex flex-col">
             <main
               className={
-                `flex-1 min-w-0 min-h-0 overflow-x-hidden overflow-y-auto scroll-hidden ` +
-                (isDashboardRoute
-                  ? 'md:overflow-hidden p-3 sm:p-5'
-                  : 'p-4 sm:p-6')
+                (
+                  'flex-1 min-w-0 overflow-x-hidden ' +
+                  (isTouchDevice
+                    ? 'overflow-visible '
+                    : 'min-h-0 overflow-y-auto scroll-hidden ') +
+                  (isDashboardRoute
+                    ? (isTouchDevice ? 'p-3 sm:p-5' : 'md:overflow-hidden p-3 sm:p-5')
+                    : (isTouchDevice ? 'p-4 sm:p-6' : 'p-4 sm:p-6'))
+                )
               }
               data-scroll-wrapper="app"
             >
