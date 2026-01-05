@@ -129,7 +129,9 @@ function AppShell() {
             <main
               className={
                 `flex-1 min-w-0 min-h-0 overflow-x-hidden scroll-hidden ` +
-                (isDashboardRoute ? 'overflow-hidden p-3 sm:p-5' : 'overflow-y-auto p-4 sm:p-6')
+                (isDashboardRoute
+                  ? 'overflow-y-auto md:overflow-hidden p-3 sm:p-5'
+                  : 'overflow-y-auto p-4 sm:p-6')
               }
               data-scroll-wrapper="app"
             >
@@ -227,6 +229,18 @@ function GlobalScroller() {
   const shouldSmooth = !pathname.startsWith('/dashboard');
 
   useEffect(() => {
+    // Mobile browsers: prefer native scrolling (Lenis is wheel-focused).
+    // This also avoids cases where a custom wrapper prevents touch scrolling.
+    const isMobile =
+      typeof window !== 'undefined' &&
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(max-width: 767.98px)')?.matches;
+
+    if (isMobile) {
+      disableSmoothScroll();
+      return undefined;
+    }
+
     if (!shouldSmooth) {
       disableSmoothScroll();
       return undefined;
