@@ -455,13 +455,13 @@ export default function LandingPage() {
               </div>
             </div>
 
-            <div className="lg:col-span-5">
+            <div className="lg:col-span-5 h-full">
               <MotionDiv
                 initial={{ opacity: 0, y: 12 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.25 }}
                 transition={{ duration: 0.5, ease: 'easeOut' }}
-                className="rounded-3xl border border-white/10 bg-white/5 backdrop-blur-md p-5 sm:p-6 overflow-hidden"
+                className="h-full rounded-3xl border border-white/10 bg-white/5 backdrop-blur-md p-5 sm:p-6 overflow-hidden flex flex-col"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -471,6 +471,8 @@ export default function LandingPage() {
                     </div>
                     <p className="mt-2 text-sm text-zinc-300 leading-relaxed">
                       Tracel helps you stress-test networks with realistic attack patterns and use AI to flag anomalies in real time.
+                
+                      Drill into origin countries, incident timelines, and anomaly scores while everything stays live—so you can validate detections end-to-end, not just in theory.
                     </p>
                   </div>
                   <div className="h-11 w-11 rounded-xl border border-white/10 bg-black/30 backdrop-blur-md grid place-items-center">
@@ -478,7 +480,7 @@ export default function LandingPage() {
                   </div>
                 </div>
 
-                <div className="mt-5 grid grid-cols-2 gap-3">
+                <div className="mt-auto pt-5 grid grid-cols-2 gap-3">
                   {[
                     { k: 'Simulator', v: 'Node.js stream' },
                     { k: 'AI', v: 'Isolation Forest' },

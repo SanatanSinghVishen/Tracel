@@ -7,6 +7,7 @@ import TrafficGlobe from '../components/TrafficGlobe.jsx';
 import ChatAssistant from '../components/ChatAssistant.jsx';
 import { readDefaultTrafficView, writeDefaultTrafficView } from '../utils/prefs.js';
 import { buildAuthHeaders, getOrCreateAnonId } from '../lib/authClient.js';
+import { cyberFacts } from '../utils/cyberFacts.js';
 
 function formatUptime(seconds) {
   const hours = Math.floor(seconds / 3600);
@@ -34,31 +35,17 @@ export default function Dashboard() {
   const [bootVisible, setBootVisible] = useState(true);
   const [bootFading, setBootFading] = useState(false);
 
-  const bootFacts = useMemo(
-    () => [
-      'MFA can stop most credential-stuffing attacks by adding a second factor.',
-      'Least privilege limits blast radius—only grant access that’s truly needed.',
-      'Patch cadence matters: attackers often exploit known bugs within days of disclosure.',
-      'Phishing works because it targets humans—verify links, domains, and sender intent.',
-      'Network segmentation helps contain incidents when something gets compromised.',
-      'Logs are your time machine—centralized logging makes investigations dramatically faster.',
-      'Backups are a security control: test restores so ransomware can’t hold you hostage.',
-      'Anomaly detection is strongest when paired with context (geo, time, behavior).',
-    ],
-    [],
-  );
-
   const [bootFactIndex, setBootFactIndex] = useState(0);
 
   useEffect(() => {
     if (!bootVisible || bootFading) return undefined;
 
     const id = window.setInterval(() => {
-      setBootFactIndex((i) => (i + 1) % bootFacts.length);
+      setBootFactIndex((i) => (i + 1) % cyberFacts.length);
     }, 4200);
 
     return () => window.clearInterval(id);
-  }, [bootVisible, bootFading, bootFacts.length]);
+  }, [bootVisible, bootFading]);
 
   useEffect(() => {
     let cancelled = false;
@@ -322,7 +309,7 @@ export default function Dashboard() {
 
             <div className="text-white text-xl sm:text-2xl font-semibold">Initializing AI Engine…</div>
             <div className="mt-1 text-xs text-slate-400 uppercase tracking-wider">
-              Warming up models + scoring pipeline
+              Waking up models + scoring pipeline
             </div>
 
             <div className="mt-5 h-2 w-full overflow-hidden rounded-full border border-zinc-800 bg-zinc-950/60">
@@ -331,14 +318,14 @@ export default function Dashboard() {
 
             <div className="mt-5 rounded-xl border border-zinc-800 bg-zinc-950/40 p-4 text-left">
               <div className="flex items-center justify-between gap-3">
-                <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Cyber fact</div>
+                <div className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Fact</div>
                 <div className="inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/60 px-2.5 py-1 text-[11px] text-slate-200">
                   <span className="pulse-dot" />
                   <span>Booting</span>
                 </div>
               </div>
               <div key={bootFactIndex} className="mt-2 text-sm text-slate-200 leading-relaxed animate-fade-in">
-                {bootFacts[bootFactIndex]}
+                {cyberFacts[bootFactIndex % cyberFacts.length]}
               </div>
             </div>
 
