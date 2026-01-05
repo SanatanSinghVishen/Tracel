@@ -260,6 +260,10 @@ const aiStatus = {
 
 let aiHealthPenaltyUntilMs = 0;
 
+let lastAiWarmupAttemptAtMs = 0;
+let aiWarmupSucceededAtMs = 0;
+const AI_WARMUP_COOLDOWN_MS = Math.max(60_000, parseInt(String(process.env.AI_WARMUP_COOLDOWN_MS || '300000'), 10) || 300_000);
+
 function getRetryAfterMsFromHeaders(headers, fallbackMs) {
     try {
         const ra = headers?.['retry-after'] ?? headers?.['Retry-After'];
@@ -522,11 +526,20 @@ async function pollAiHealthOnce({ load = false } = {}) {
 }
 
 async function warmupAiBestEffort({ attempts = 3 } = {}) {
+    // Avoid spamming warmup calls when multiple clients load at once.
+    const now = Date.now();
+    if (aiWarmupSucceededAtMs && (now - aiWarmupSucceededAtMs) < AI_WARMUP_COOLDOWN_MS) return;
+    if (lastAiWarmupAttemptAtMs && (now - lastAiWarmupAttemptAtMs) < AI_WARMUP_COOLDOWN_MS) return;
+    lastAiWarmupAttemptAtMs = now;
+
     // Fire a few spaced health checks so a sleeping Render service has time to boot.
     for (let i = 0; i < attempts; i += 1) {
         if (Date.now() < aiHealthPenaltyUntilMs) return;
         await pollAiHealthOnce({ load: true }).catch(() => void 0);
-        if (aiStatus.ok) return;
+        if (aiStatus.ok) {
+            aiWarmupSucceededAtMs = Date.now();
+            return;
+        }
         await sleep(1500);
     }
 }
