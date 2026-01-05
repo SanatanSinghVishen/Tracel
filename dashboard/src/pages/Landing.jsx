@@ -295,7 +295,7 @@ export default function Landing() {
         />
       </div>
 
-      <div className="relative mx-auto w-full max-w-6xl p-4 sm:p-6">
+      <div className="relative mx-auto w-full max-w-screen-2xl p-4 sm:p-6">
         {/* Top bar */}
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
