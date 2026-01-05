@@ -5,6 +5,8 @@ const PacketSchema = new mongoose.Schema({
     owner_user_id: { type: String, index: true },
     owner_email: { type: String, index: true },
     source_ip: String,
+    // Optional enrichment (derived server-side from source_ip when missing).
+    source_country: { type: String, index: true },
     destination_ip: String,
     protocol: { type: String, default: 'TCP' },
     method: String,

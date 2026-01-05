@@ -929,6 +929,12 @@ function startOrGetOwnerStream(ownerUserId) {
         owner: ownerUserId,
         getAiReady: () => !!isAIReady,
         emitPacket: (packetData) => {
+            try {
+                ensurePacketCountry(packetData);
+            } catch {
+                // best-effort
+            }
+
             const isAttackMode = !!entry.stream?.isAttackMode;
             const rawScore = packetData?.anomaly_score;
             const aiScored = rawScore !== null && rawScore !== undefined && rawScore !== '' && Number.isFinite(Number(rawScore));
@@ -1001,6 +1007,11 @@ function startOrGetOwnerStream(ownerUserId) {
             io.to(room).emit('packet', packetWithSession);
         },
         persistPacket: (packetData) => {
+            try {
+                ensurePacketCountry(packetData);
+            } catch {
+                // best-effort
+            }
             const ownerEmail = ownerEmailByOwner.get(ownerUserId);
             persistPacket({
                 ...packetData,
@@ -1259,7 +1270,62 @@ if (!mongoUrl) {
         .catch((err) => log.error('MongoDB connection error', err));
 }
 
+// --- Geo enrichment (country for each packet) ---
+// Keep this ordering in sync with dashboard/src/utils/geoData.js (COUNTRY_COORDS).
+const GEO_COUNTRY_NAMES = [
+    'United States',
+    'Canada',
+    'Mexico',
+    'Brazil',
+    'Argentina',
+    'United Kingdom',
+    'France',
+    'Germany',
+    'Spain',
+    'Italy',
+    'Netherlands',
+    'Sweden',
+    'Poland',
+    'Turkey',
+    'Russia',
+    'India',
+    'China',
+    'Japan',
+    'South Korea',
+    'Singapore',
+    'Australia',
+    'New Zealand',
+    'South Africa',
+    'Nigeria',
+];
+
+function ipToCountryName(ip) {
+    const s = typeof ip === 'string' ? ip.trim() : '';
+    const firstPart = s.split('.')[0];
+    const first = Number.parseInt(firstPart, 10);
+    if (!Number.isFinite(first) || first < 0) return GEO_COUNTRY_NAMES[0];
+    return GEO_COUNTRY_NAMES[Math.abs(first) % GEO_COUNTRY_NAMES.length];
+}
+
+function ensurePacketCountry(packet) {
+    if (!packet || typeof packet !== 'object') return packet;
+    const existing = typeof packet.source_country === 'string' ? packet.source_country.trim() : '';
+    if (existing) return packet;
+    const ip = typeof packet.source_ip === 'string' ? packet.source_ip.trim() : '';
+    if (!ip) return packet;
+    packet.source_country = ipToCountryName(ip);
+    return packet;
+}
+
 function persistPacket(packetData) {
+    // Ensure every packet has a country value (derived from source_ip).
+    // Required because Mongo schema is strict and won't store unknown fields.
+    try {
+        ensurePacketCountry(packetData);
+    } catch {
+        // best-effort
+    }
+
     // Always keep a recent in-memory history so the dashboard can function
     // even when Mongo is not configured or temporarily unavailable.
     try {
@@ -1362,41 +1428,6 @@ function memoryQueryPackets(filter) {
 
 function computeThreatIntelFromPackets(packets) {
     // Must stay in sync with dashboard/src/utils/geoData.js ordering.
-    function ipToCountryName(ip) {
-        const countries = [
-            'United States',
-            'Canada',
-            'Mexico',
-            'Brazil',
-            'Argentina',
-            'United Kingdom',
-            'France',
-            'Germany',
-            'Spain',
-            'Italy',
-            'Netherlands',
-            'Sweden',
-            'Poland',
-            'Turkey',
-            'Russia',
-            'India',
-            'China',
-            'Japan',
-            'South Korea',
-            'Singapore',
-            'Australia',
-            'New Zealand',
-            'South Africa',
-            'Nigeria',
-        ];
-
-        const s = typeof ip === 'string' ? ip.trim() : '';
-        const firstPart = s.split('.')[0];
-        const first = Number.parseInt(firstPart, 10);
-
-        if (!Number.isFinite(first) || first < 0) return countries[0];
-        return countries[Math.abs(first) % countries.length];
-    }
 
     const anomalies = (Array.isArray(packets) ? packets : []).filter((p) => p && p.is_anomaly);
     const totalThreats = anomalies.length;
@@ -1549,18 +1580,7 @@ async function computeThreatIntelFromMongo({ ownerUserId, since, to, limit }) {
         timestamp: { $gte: from, $lt: until },
     };
 
-    const countries = [
-        'United States',
-        'Canada',
-        'Brazil',
-        'United Kingdom',
-        'Germany',
-        'Russia',
-        'China',
-        'Japan',
-        'Australia',
-        'South Africa',
-    ];
+    const countries = GEO_COUNTRY_NAMES;
 
     // Vector derivation: respects explicit values (attack_vector) and otherwise
     // matches the heuristic used across the app.
@@ -2466,18 +2486,33 @@ app.get('/api/packets', async (req, res) => {
                 .select('-__v')
                 .lean();
 
+            const enriched = (packets || []).map((p) => {
+                try {
+                    return ensurePacketCountry(p);
+                } catch {
+                    return p;
+                }
+            });
+
             return res.json({
-                count: packets.length,
-                packets,
+                count: enriched.length,
+                packets: enriched,
                 source: 'mongo',
                 session,
             });
         }
 
         const packets = memoryQueryPackets(filter);
+        const enriched = (packets || []).map((p) => {
+            try {
+                return ensurePacketCountry(p);
+            } catch {
+                return p;
+            }
+        });
         return res.json({
-            count: packets.length,
-            packets,
+            count: enriched.length,
+            packets: enriched,
             source: 'memory',
             session,
         });
