@@ -215,6 +215,49 @@ const aiStatus = {
     lastError: null,
 };
 
+// --- System Initialization Phase (Render cold-start boot gating) ---
+// Used by the dashboard to show a boot overlay while the separate ai-engine service wakes.
+let isAIReady = false;
+
+async function checkAIHealth() {
+    // Required: call AI_SERVICE_URL/health and keep retrying until it answers.
+    const base = String(process.env.AI_SERVICE_URL || '').trim();
+    if (!base) {
+        log.info('[INIT] Waiting for AI...');
+        setTimeout(() => {
+            checkAIHealth().catch(() => void 0);
+        }, 3000);
+        return;
+    }
+
+    let url;
+    try {
+        url = new URL('/health', base).toString();
+    } catch {
+        url = `${String(base).replace(/\/+$/, '')}/health`;
+    }
+
+    try {
+        const res = await axios.get(url, {
+            timeout: Math.max(3000, getAiRequestTimeoutMs('health')),
+            validateStatus: () => true,
+        });
+
+        if (res.status === 200) {
+            if (!isAIReady) log.info('[INIT] AI Engine Online');
+            isAIReady = true;
+            return;
+        }
+    } catch {
+        // fall through to retry
+    }
+
+    log.info('[INIT] Waiting for AI...');
+    setTimeout(() => {
+        checkAIHealth().catch(() => void 0);
+    }, 3000);
+}
+
 function getAiRequestTimeoutMs(kind = 'health') {
     const isHosted = isHostedEnvironment();
     const envKey =
@@ -359,13 +402,13 @@ async function wakeUpAIService() {
 }
 
 function startAiKeepAlive() {
-    // Render sleeps after ~15 minutes of inactivity; ping at 14 minutes.
+    // Keep the AI service warm while users are active on the site.
     if (isAiDisabled()) return;
     const base = getAiServiceUrl();
     if (!base) return;
     setInterval(() => {
         wakeUpAIService().catch(() => void 0);
-    }, 14 * 60 * 1000);
+    }, 10 * 60 * 1000);
 }
 
 setInterval(() => {
@@ -1478,6 +1521,7 @@ app.get('/api/status', async (req, res) => {
 
         return res.json({
             ok: true,
+            ai_ready: !!isAIReady,
             session: sid ? `sess:${sid}` : null,
             auth: {
                 ownerUserId: auth.ownerUserId,
@@ -2079,6 +2123,9 @@ server.listen(PORT, '0.0.0.0', () => {
 
     // Wake-up chain: as soon as Node boots, ping the AI service so it starts.
     wakeUpAIService().catch(() => void 0);
+
+    // System initialization phase: keep polling AI health until it's ready.
+    checkAIHealth().catch(() => void 0);
     startAiKeepAlive();
 });
 

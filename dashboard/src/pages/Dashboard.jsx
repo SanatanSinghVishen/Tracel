@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Shield, ShieldAlert, Terminal, Wifi, Zap } from 'lucide-react';
+import { Cpu, Shield, ShieldAlert, Terminal, Wifi, Zap } from 'lucide-react';
 import { useSocket } from '../hooks/useSocket.js';
 import TrafficGlobe from '../components/TrafficGlobe.jsx';
 import ChatAssistant from '../components/ChatAssistant.jsx';
@@ -26,6 +26,54 @@ export default function Dashboard() {
   const [logs, setLogs] = useState([]);
   const [attackSimEnabled, setAttackSimEnabled] = useState(false);
   const [uptimeStartMs, setUptimeStartMs] = useState(0);
+
+  // --- System Bootup Overlay (Render AI cold-start handling) ---
+  const [bootVisible, setBootVisible] = useState(true);
+  const [bootFading, setBootFading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    let intervalId = null;
+    let fadeTimer = null;
+
+    async function pollSystemStatus() {
+      try {
+        const base = connection.serverUrl || 'http://localhost:3000';
+        const url = new URL('/api/status', base);
+        url.searchParams.set('_', String(Date.now()));
+
+        const headers = await buildAuthHeaders(isLoaded ? getToken : null, anonId);
+        const res = await fetch(url.toString(), { headers, credentials: 'include', cache: 'no-store' });
+        const data = await res.json().catch(() => ({}));
+        if (cancelled) return;
+
+        const ready = !!data?.ai_ready;
+        if (ready) {
+          if (!bootFading) setBootFading(true);
+          if (intervalId) window.clearInterval(intervalId);
+          fadeTimer = window.setTimeout(() => {
+            if (!cancelled) setBootVisible(false);
+          }, 600);
+        } else {
+          setBootVisible(true);
+          setBootFading(false);
+        }
+      } catch {
+        if (cancelled) return;
+        setBootVisible(true);
+        setBootFading(false);
+      }
+    }
+
+    pollSystemStatus();
+    intervalId = window.setInterval(pollSystemStatus, 2000);
+
+    return () => {
+      cancelled = true;
+      if (intervalId) window.clearInterval(intervalId);
+      if (fadeTimer) window.clearTimeout(fadeTimer);
+    };
+  }, [connection.serverUrl, isLoaded, getToken, anonId, bootFading]);
 
   // Load recent history so UI doesn't reset on refresh/navigation.
   useEffect(() => {
@@ -179,6 +227,28 @@ export default function Dashboard() {
 
   return (
     <div className="min-w-0 flex flex-col gap-3 h-full min-h-0 animate-fade-in">
+      {bootVisible ? (
+        <div
+          className={
+            `fixed inset-0 z-[80] grid place-items-center bg-zinc-950/85 backdrop-blur-sm ` +
+            `transition-opacity duration-500 ` +
+            (bootFading ? 'opacity-0 pointer-events-none' : 'opacity-100')
+          }
+        >
+          <div className="w-[min(92vw,520px)] rounded-2xl border border-white/10 bg-black/40 p-6 sm:p-8 text-center">
+            <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl border border-white/10 bg-white/5">
+              <Cpu className="h-7 w-7 text-slate-200 animate-pulse" />
+            </div>
+            <div className="text-white text-xl sm:text-2xl font-semibold">Initializing Neural Engine...</div>
+            <div className="mt-2 text-sm text-slate-300">
+              Waking up cloud resources (this may take ~1 minute)...
+            </div>
+            <div className="mt-5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+              <div className="h-full w-1/2 bg-white/30 animate-pulse" />
+            </div>
+          </div>
+        </div>
+      ) : null}
       <ChatAssistant
         connection={connection}
         stats={stats}
