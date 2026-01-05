@@ -185,24 +185,37 @@ function getAiPredictUrl() {
     return 'http://127.0.0.1:5000/predict';
 }
 
-function getAiHealthUrl() {
+function getAiHealthUrl({ load = false } = {}) {
     const raw = String(process.env.AI_HEALTH_URL || '').trim();
-    if (raw) return raw;
+    if (raw) {
+        // If the configured URL includes a warmup flag (load=1), avoid spamming it on frequent polls.
+        if (!load) {
+            try {
+                const u = new URL(raw);
+                u.searchParams.delete('load');
+                return u.toString();
+            } catch {
+                // best-effort
+            }
+        }
+        return raw;
+    }
 
     const predict = getAiPredictUrl();
     if (!predict) return null;
-    // Common pattern: /predict -> /health?load=1
+    // Common pattern: /predict -> /health (optionally with load=1 during warmup).
     if (/\/predict\/?$/i.test(predict)) {
-        return predict.replace(/\/predict\/?$/i, '/health?load=1');
+        return predict.replace(/\/predict\/?$/i, load ? '/health?load=1' : '/health');
     }
-    // Fallback: just try /health?load=1 off the same origin.
+    // Fallback: just try /health off the same origin.
     try {
         const u = new URL(predict);
         u.pathname = '/health';
-        u.search = 'load=1';
+        if (load) u.searchParams.set('load', '1');
+        else u.search = '';
         return u.toString();
     } catch {
-        return isHostedEnvironment() ? null : 'http://127.0.0.1:5000/health?load=1';
+        return isHostedEnvironment() ? null : load ? 'http://127.0.0.1:5000/health?load=1' : 'http://127.0.0.1:5000/health';
     }
 }
 
@@ -282,7 +295,7 @@ function sleep(ms) {
 
 let lastAiStatusBroadcastOk = null;
 
-async function pollAiHealthOnce() {
+async function pollAiHealthOnce({ load = false } = {}) {
     const nowIso = new Date().toISOString();
     aiStatus.lastCheckedAt = nowIso;
 
@@ -303,12 +316,13 @@ async function pollAiHealthOnce() {
         return;
     }
 
-    const healthUrl = getAiHealthUrl();
+    const healthUrl = getAiHealthUrl({ load });
     if (!healthUrl) {
         aiStatus.ok = false;
         aiStatus.modelLoaded = null;
         aiStatus.threshold = null;
         aiStatus.lastError = { message: 'AI not configured', code: 'AI_NOT_CONFIGURED' };
+        isAIReady = false;
         if (lastAiStatusBroadcastOk === null || lastAiStatusBroadcastOk !== aiStatus.ok) {
             lastAiStatusBroadcastOk = aiStatus.ok;
             try {
@@ -332,6 +346,10 @@ async function pollAiHealthOnce() {
         aiStatus.threshold = Number.isFinite(threshold) ? threshold : null;
         aiStatus.lastError = null;
         if (ok) aiStatus.lastOkAt = nowIso;
+
+        // Treat a successful health check as "ready" for the boot overlay.
+        // This avoids the overlay being stuck if AI_SERVICE_URL is unset but AI_HEALTH_URL works.
+        if (ok) isAIReady = true;
     } catch (e) {
         aiStatus.ok = false;
         aiStatus.modelLoaded = null;
@@ -357,7 +375,7 @@ async function pollAiHealthOnce() {
 async function warmupAiBestEffort({ attempts = 3 } = {}) {
     // Fire a few spaced health checks so a sleeping Render service has time to boot.
     for (let i = 0; i < attempts; i += 1) {
-        await pollAiHealthOnce().catch(() => void 0);
+        await pollAiHealthOnce({ load: true }).catch(() => void 0);
         if (aiStatus.ok) return;
         await sleep(1500);
     }
@@ -412,9 +430,10 @@ function startAiKeepAlive() {
 }
 
 setInterval(() => {
-    pollAiHealthOnce().catch(() => void 0);
+    // Frequent polling should be "light" (no model warmup flag) to avoid 429s.
+    pollAiHealthOnce({ load: false }).catch(() => void 0);
 }, Math.max(2000, Math.min(parseInt(process.env.AI_HEALTH_POLL_MS || '5000', 10) || 5000, 60_000)));
-pollAiHealthOnce().catch(() => void 0);
+pollAiHealthOnce({ load: true }).catch(() => void 0);
 
 const memoryStore = new MemoryStore({
     maxPerOwner: Math.max(100, Math.min(parseInt(process.env.MEMORY_MAX_PACKETS || '5000', 10), 50_000))
