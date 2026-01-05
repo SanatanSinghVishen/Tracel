@@ -128,10 +128,10 @@ function AppShell() {
           <div className="flex-1 min-w-0 flex flex-col">
             <main
               className={
-                `flex-1 min-w-0 min-h-0 overflow-x-hidden scroll-hidden ` +
+                `flex-1 min-w-0 min-h-0 overflow-x-hidden overflow-y-auto scroll-hidden ` +
                 (isDashboardRoute
-                  ? 'overflow-y-auto md:overflow-hidden p-3 sm:p-5'
-                  : 'overflow-y-auto p-4 sm:p-6')
+                  ? 'md:overflow-hidden p-3 sm:p-5'
+                  : 'p-4 sm:p-6')
               }
               data-scroll-wrapper="app"
             >

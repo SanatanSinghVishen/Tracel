@@ -318,7 +318,7 @@ export default function Dashboard() {
   const attackActive = !!currentPacket?.is_anomaly;
 
   return (
-    <div className="min-w-0 flex flex-col gap-3 h-full min-h-0 animate-fade-in">
+    <div className="min-w-0 flex flex-col gap-3 min-h-full md:h-full md:min-h-0 animate-fade-in">
       {bootVisible ? (
         <div
           className={
@@ -568,9 +568,9 @@ export default function Dashboard() {
       </div>
 
       {/* Main Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 min-w-0 flex-1 min-h-0 items-stretch">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 min-w-0 items-stretch md:flex-1 md:min-h-0">
         {/* Traffic */}
-        <div className="glass-card glow-hover md:col-span-2 lg:col-span-3 p-5 sm:p-6 flex flex-col min-h-0 h-full animate-fade-up">
+        <div className="glass-card glow-hover md:col-span-2 lg:col-span-3 p-5 sm:p-6 flex flex-col animate-fade-up">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
             <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
               <Wifi size={16} className="text-slate-200" />{' '}
@@ -623,13 +623,13 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 min-w-0">
+          <div className="min-w-0 min-h-[360px] sm:min-h-[440px] md:flex-1 md:min-h-0">
             {trafficView === 'globe' ? (
-              <div className="h-full min-h-0 overflow-hidden rounded-lg">
+              <div className="h-full overflow-hidden rounded-lg">
                 <TrafficGlobe />
               </div>
             ) : trafficView === 'feed' ? (
-              <div className="h-full min-h-0 overflow-y-auto scroll-hidden rounded-lg border border-zinc-800 bg-zinc-950/30 p-4">
+              <div className="h-full overflow-y-auto scroll-hidden rounded-lg border border-zinc-800 bg-zinc-950/30 p-4">
                 {trafficData.length === 0 ? (
                   <div className="space-y-3">
                     <div className="h-4 w-2/3 skeleton" />
@@ -685,13 +685,13 @@ export default function Dashboard() {
                 )}
               </div>
             ) : trafficData.length === 0 ? (
-              <div className="h-full min-h-0 flex flex-col justify-center gap-3">
+              <div className="h-full flex flex-col justify-center gap-3">
                 <div className="h-6 w-40 skeleton" />
                 <div className="h-40 w-full skeleton" />
                 <div className="h-3 w-3/4 skeleton" />
               </div>
             ) : (
-              <div className="h-full min-h-0 min-w-0">
+              <div className="h-full min-w-0">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0}>
                   <AreaChart data={trafficData}>
                     <defs>
@@ -738,13 +738,13 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="flex flex-col gap-4 min-h-0 h-full md:col-span-2 lg:col-span-1">
+        <div className="flex flex-col gap-4 md:col-span-2 lg:col-span-1 md:min-h-0 md:h-full">
           {/* Logs */}
-          <div className="glass-card glow-hover p-5 sm:p-6 flex flex-col min-h-0 h-full animate-fade-up">
+          <div className="glass-card glow-hover p-5 sm:p-6 flex flex-col animate-fade-up">
             <h2 className="text-slate-400 mb-3 flex items-center gap-2 uppercase tracking-wider text-[10px]">
               <Terminal size={12} /> Live System Logs
             </h2>
-            <div className="flex-1 min-h-0 overflow-y-auto scroll-hidden space-y-2 pr-2">
+            <div className="max-h-[360px] sm:max-h-[440px] md:flex-1 md:max-h-none md:min-h-0 overflow-y-auto scroll-hidden space-y-2 pr-2">
               {logs.length === 0 ? (
                 <div className="space-y-2">
                   <div className="h-4 w-3/4 skeleton" />
