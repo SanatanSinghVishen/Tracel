@@ -127,6 +127,60 @@ function normalizeHttpBase(raw) {
     return s;
 }
 
+// Detect Render private-network style targets (e.g., "tracel-ai" or "tracel-ai:10000").
+// Heuristic: hostname without dots (and not localhost/IP) => likely internal.
+function isLikelyRenderPrivateHost(hostname) {
+    const h = String(hostname || '').trim().toLowerCase();
+    if (!h) return false;
+    if (h === 'localhost' || h === '0.0.0.0' || h === '127.0.0.1') return false;
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return false; // IPv4
+    return !h.includes('.');
+}
+
+function classifyAiNetwork(baseOrRaw) {
+    try {
+        const u = new URL(normalizeHttpBase(baseOrRaw) || '');
+        const host = String(u.hostname || '').toLowerCase();
+        if (host.endsWith('onrender.com')) return 'Public Internet';
+        if (isLikelyRenderPrivateHost(host)) return 'Private Network';
+        return 'Public Internet';
+    } catch {
+        return 'Public Internet';
+    }
+}
+
+// Normalize AI_SERVICE_URL for both public + Render internal private network.
+// - If internal-looking => force http://
+// - If *.onrender.com => force https://
+// - Otherwise respect provided scheme (or normalizeHttpBase default)
+function normalizeAiServiceBase(raw) {
+    const input = String(raw || '').trim();
+    if (!input) return null;
+
+    const candidate = normalizeHttpBase(input);
+    if (!candidate) return null;
+
+    try {
+        const u = new URL(candidate);
+        const host = String(u.hostname || '').toLowerCase();
+
+        if (host.endsWith('onrender.com')) {
+            u.protocol = 'https:';
+            return u.origin;
+        }
+
+        if (isLikelyRenderPrivateHost(host)) {
+            u.protocol = 'http:';
+            return u.origin;
+        }
+
+        return u.origin;
+    } catch {
+        // Best-effort fallback
+        return candidate;
+    }
+}
+
 let lastAiConfigWarnAt = 0;
 function warnAiConfigOncePerInterval(message, meta) {
     const now = Date.now();
@@ -137,7 +191,7 @@ function warnAiConfigOncePerInterval(message, meta) {
 
 function getAiPredictUrl() {
     // Prefer AI_SERVICE_URL as the canonical ai-engine base URL.
-    const svc = normalizeHttpBase(process.env.AI_SERVICE_URL);
+    const svc = normalizeAiServiceBase(process.env.AI_SERVICE_URL);
     if (svc) {
         try {
             const candidate = new URL('/predict', svc).toString();
@@ -291,6 +345,8 @@ function getRetryAfterMsFromHeaders(headers, fallbackMs) {
 // Used by the dashboard to show a boot overlay while the separate ai-engine service wakes.
 let isAIReady = false;
 
+let lastAiProbeNetwork = null;
+
 const defaultAiWakePollMs = isHostedEnvironment() ? 60_000 : 15_000;
 const AI_WAKE_POLL_MS = Math.max(
     defaultAiWakePollMs,
@@ -307,7 +363,7 @@ async function probeAiRootReady(base) {
     }
 
     const res = await axios.get(url, {
-        timeout: Math.max(3000, getAiRequestTimeoutMs('health')),
+        timeout: Math.max(3000, getAiTimeoutMsForBase(base, 'health')),
         validateStatus: () => true,
     });
 
@@ -331,6 +387,13 @@ async function checkAIHealth() {
             checkAIHealth().catch(() => void 0);
         }, AI_WAKE_POLL_MS);
         return;
+    }
+
+    // Log which network path we're using so you can verify the internal switch.
+    const network = classifyAiNetwork(base);
+    if (network !== lastAiProbeNetwork) {
+        lastAiProbeNetwork = network;
+        log.info(`[INIT] Probing AI via ${network}: ${base}`);
     }
 
     // Guard against accidentally pointing at this backend.
@@ -365,7 +428,7 @@ async function checkAIHealth() {
         // If root isn't ready, apply a 429-aware backoff by probing root again later.
         // (Rate limiting can happen at the edge before the request reaches gunicorn.)
         const res = await axios.get(new URL('/health', base).toString(), {
-            timeout: Math.max(3000, getAiRequestTimeoutMs('health')),
+            timeout: Math.max(3000, getAiTimeoutMsForBase(base, 'health')),
             validateStatus: () => true,
         }).catch((e) => e?.response || null);
 
@@ -404,6 +467,14 @@ function getAiRequestTimeoutMs(kind = 'health') {
     // Render cold-starts commonly exceed a couple seconds.
     if (isHosted) return kind === 'report' ? 20_000 : 15_000;
     return kind === 'report' ? 5000 : 1500;
+}
+
+function getAiTimeoutMsForBase(base, kind = 'health') {
+    const timeout = getAiRequestTimeoutMs(kind);
+    // Internal requests are typically fast, but Render cold starts still need slack.
+    // Ensure at least 10 seconds for the first wake-up/health probe on private network.
+    if (classifyAiNetwork(base) === 'Private Network') return Math.max(timeout, 10_000);
+    return timeout;
 }
 
 function sleep(ms) {
@@ -608,7 +679,7 @@ function getAiBaseUrl() {
 function getAiServiceUrl() {
     // Preferred for the wake-up chain: base origin of the AI service.
     // Keep compatibility with existing AI_ENGINE_URL/AI_PREDICT_URL setup.
-    const raw = normalizeHttpBase(process.env.AI_SERVICE_URL);
+    const raw = normalizeAiServiceBase(process.env.AI_SERVICE_URL);
     if (raw) {
         try {
             // Normalize to origin (strip any path).
@@ -655,7 +726,7 @@ async function wakeUpAIService() {
         const base = getAiServiceUrl();
         if (!base) return;
         const u = new URL('/', base);
-        await axios.get(u.toString(), { timeout: getAiRequestTimeoutMs('health') });
+        await axios.get(u.toString(), { timeout: getAiTimeoutMsForBase(base, 'health') });
     } catch {
         // best-effort only
     }
