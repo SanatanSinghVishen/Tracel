@@ -29,6 +29,12 @@
     /* Keep scrolling enabled, but hide the scrollbar across browsers. */
     -ms-overflow-style: none; /* IE/Edge legacy */
     scrollbar-width: none; /* Firefox */
+
+    /* Mobile Safari: allow momentum scrolling inside overflow containers. */
+    -webkit-overflow-scrolling: touch;
+
+    /* Ensure touch scrolling is not blocked by nested handlers. */
+    touch-action: pan-y;
   }
 
   .scroll-hidden::-webkit-scrollbar {
