@@ -1488,13 +1488,65 @@ function computeThreatIntelFromPackets(packets) {
         byCountry.set(country, (byCountry.get(country) || 0) + 1);
     }
 
-    const geoAllCountries = Array.from(byCountry.entries())
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, count]) => ({
-            name,
-            count,
-            pct: totalThreats ? Math.round((count / totalThreats) * 100) : 0,
+    function allocateCountryPercentages(rows, total) {
+        const list = Array.isArray(rows) ? rows : [];
+        const denom = Number(total);
+        if (!Number.isFinite(denom) || denom <= 0) {
+            return list.map((r) => ({ ...r, pct: 0 }));
+        }
+
+        const working = list.map((r, idx) => {
+            const count = Number(r?.count || 0);
+            const raw = (count / denom) * 100;
+            const base = Math.floor(raw);
+            const frac = raw - base;
+            return {
+                idx,
+                name: r?.name,
+                count,
+                base,
+                frac,
+            };
+        });
+
+        let sum = working.reduce((acc, w) => acc + (Number.isFinite(w.base) ? w.base : 0), 0);
+
+        // Clamp for safety.
+        if (!Number.isFinite(sum)) sum = 0;
+        if (sum > 100) sum = 100;
+
+        let remaining = 100 - sum;
+        if (remaining > 0) {
+            // Largest remainder: give +1% to highest fractional parts.
+            const order = working
+                .slice()
+                .sort((a, b) => {
+                    if (b.frac !== a.frac) return b.frac - a.frac;
+                    if (b.count !== a.count) return b.count - a.count;
+                    return a.idx - b.idx;
+                });
+
+            for (let i = 0; i < order.length && remaining > 0; i += 1) {
+                order[i].base += 1;
+                remaining -= 1;
+            }
+        }
+
+        // Map back preserving original order.
+        const pctByIdx = new Map(working.map((w) => [w.idx, Math.max(0, Math.min(100, w.base))]));
+        return list.map((r, idx) => ({
+            name: String(r?.name || ''),
+            count: Number(r?.count || 0),
+            pct: pctByIdx.get(idx) ?? 0,
         }));
+    }
+
+    const geoAllCountries = allocateCountryPercentages(
+        Array.from(byCountry.entries())
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, count]) => ({ name, count })),
+        totalThreats
+    );
 
     const geoTopCountries = geoAllCountries.slice(0, 5);
 
@@ -1662,6 +1714,54 @@ async function computeThreatIntelFromMongo({ ownerUserId, since, to, limit }) {
 
     const totalThreats = await Packet.countDocuments(baseMatch);
 
+    function allocateCountryPercentages(rows, total) {
+        const list = Array.isArray(rows) ? rows : [];
+        const denom = Number(total);
+        if (!Number.isFinite(denom) || denom <= 0) {
+            return list.map((r) => ({ ...r, pct: 0 }));
+        }
+
+        const working = list.map((r, idx) => {
+            const count = Number(r?.count || 0);
+            const raw = (count / denom) * 100;
+            const base = Math.floor(raw);
+            const frac = raw - base;
+            return {
+                idx,
+                base,
+                frac,
+                count,
+            };
+        });
+
+        let sum = working.reduce((acc, w) => acc + (Number.isFinite(w.base) ? w.base : 0), 0);
+        if (!Number.isFinite(sum)) sum = 0;
+        if (sum > 100) sum = 100;
+
+        let remaining = 100 - sum;
+        if (remaining > 0) {
+            const order = working
+                .slice()
+                .sort((a, b) => {
+                    if (b.frac !== a.frac) return b.frac - a.frac;
+                    if (b.count !== a.count) return b.count - a.count;
+                    return a.idx - b.idx;
+                });
+
+            for (let i = 0; i < order.length && remaining > 0; i += 1) {
+                order[i].base += 1;
+                remaining -= 1;
+            }
+        }
+
+        const pctByIdx = new Map(working.map((w) => [w.idx, Math.max(0, Math.min(100, w.base))]));
+        return list.map((r, idx) => ({
+            name: String(r?.name || ''),
+            count: Number(r?.count || 0),
+            pct: pctByIdx.get(idx) ?? 0,
+        }));
+    }
+
     const [topHostileIps, attackVectorDistribution, geoAllCountries] = await Promise.all([
         Packet.aggregate([
             { $match: baseMatch },
@@ -1714,11 +1814,11 @@ async function computeThreatIntelFromMongo({ ownerUserId, since, to, limit }) {
                 { $limit: 200 },
             ]);
 
-            return (rows || []).map((r) => {
-                const count = Number(r.count || 0);
-                const pct = totalThreats > 0 ? Math.round((count / totalThreats) * 100) : 0;
-                return { name: String(r._id || ''), count, pct };
-            });
+            const normalized = (rows || []).map((r) => ({
+                name: String(r._id || ''),
+                count: Number(r.count || 0),
+            }));
+            return allocateCountryPercentages(normalized, totalThreats);
         })(),
     ]);
 
