@@ -137,13 +137,13 @@ function getAiPredictUrl() {
                             AI_SERVICE_URL: svc,
                             RENDER_EXTERNAL_URL: String(process.env.RENDER_EXTERNAL_URL || '').trim() || undefined,
                         });
-                        return null;
+                        // Fall back to AI_PREDICT_URL / AI_ENGINE_URL.
                     }
                 } catch {
                     // best-effort
                 }
             }
-            return candidate;
+            if (!ext || new URL(candidate).origin !== ext) return candidate;
         } catch {
             // Fall through.
         }
@@ -159,13 +159,18 @@ function getAiPredictUrl() {
                         AI_PREDICT_URL: explicit,
                         RENDER_EXTERNAL_URL: String(process.env.RENDER_EXTERNAL_URL || '').trim() || undefined,
                     });
-                    return null;
+                    // Fall back to AI_ENGINE_URL.
                 }
             } catch {
                 // keep explicit value if it can't be parsed
             }
         }
-        return explicit;
+        if (!ext) return explicit;
+        try {
+            if (new URL(explicit).origin !== ext) return explicit;
+        } catch {
+            return explicit;
+        }
     }
 
     const base = String(process.env.AI_ENGINE_URL || '').trim();
