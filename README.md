@@ -133,6 +133,42 @@ Health check:
 - `GET http://127.0.0.1:5000/health` — service up (model may load lazily)
 - `GET http://127.0.0.1:5000/health?load=1` — forces model load and returns model metadata (threshold, path)
 
+## Deploying AI Engine off Render (Option C)
+
+If Render/Cloudflare rate-limiting blocks backend → AI calls, deploy `ai-engine/` somewhere else (container-based) and point the backend to it.
+
+### Build & run locally (Docker)
+
+From repo root:
+
+```bash
+docker build -t tracel-ai ./ai-engine
+docker run --rm -p 5000:5000 -e PORT=5000 tracel-ai
+```
+
+Verify:
+
+- `http://127.0.0.1:5000/` returns `{ ok: true, service: "ai-engine", ... }`
+- `http://127.0.0.1:5000/health` returns `{ status: "running" }`
+
+### Backend configuration
+
+Set the server env var to the new AI base URL (include scheme):
+
+```env
+AI_SERVICE_URL=https://<your-ai-host>
+```
+
+Examples:
+
+- Fly.io: `AI_SERVICE_URL=https://tracel-ai.fly.dev`
+- Railway: `AI_SERVICE_URL=https://tracel-ai-production.up.railway.app`
+- Azure Container Apps: `AI_SERVICE_URL=https://tracel-ai.<region>.azurecontainerapps.io`
+
+After deploy, verify from backend:
+
+- `GET /api/ai/status?probe=1` should show `probe.root.status: 200` and `okSignature: true`.
+
 ## Running Each App Separately (manual)
 
 ### 1) Server
