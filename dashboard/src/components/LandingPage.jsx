@@ -285,7 +285,7 @@ export default function LandingPage() {
                       </button>
                     </SignInButton>
                     <SignUpButton mode="modal" forceRedirectUrl="/dashboard">
-                      <button className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-300/60 bg-emerald-400 px-6 py-3.5 text-sm font-semibold text-black hover:brightness-110 transition">
+                      <button className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md px-6 py-3.5 text-sm text-zinc-200 hover:text-white hover:border-emerald-400/30 transition">
                         Create account <ArrowRight className="h-4 w-4" />
                       </button>
                     </SignUpButton>
@@ -356,35 +356,102 @@ export default function LandingPage() {
 
           <div className="mt-8 grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-7">
-              <div className="relative">
-                <div className="absolute left-[18px] top-0 bottom-0 w-px bg-gradient-to-b from-emerald-400/40 via-white/10 to-transparent" />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {[
+                  {
+                    n: '01',
+                    title: 'Traffic Generator',
+                    body: 'Simulated packets + attack patterns to stress-test behavior.',
+                    icon: Radar,
+                    accent: 'green',
+                    chips: ['Simulated', 'Attack modes'],
+                  },
+                  {
+                    n: '02',
+                    title: 'Streaming Pipeline',
+                    body: 'Node.js broadcasts packets in real time over Socket.IO.',
+                    icon: Globe2,
+                    accent: 'cyan',
+                    chips: ['Node.js', 'Socket.IO'],
+                  },
+                  {
+                    n: '03',
+                    title: 'Python AI Scoring',
+                    body: 'Isolation Forest scores anomalies continuously (lower = riskier).',
+                    icon: Cpu,
+                    accent: 'green',
+                    chips: ['Python', 'Isolation Forest'],
+                  },
+                  {
+                    n: '04',
+                    title: 'Forensics Dashboard',
+                    body: 'Investigate origins, incidents, and KPIs with geo intel.',
+                    icon: ShieldAlert,
+                    accent: 'cyan',
+                    chips: ['Forensics', 'MongoDB'],
+                  },
+                ].map((s, idx) => {
+                  const borderHover = s.accent === 'cyan' ? 'hover:border-cyan-400/50' : 'hover:border-emerald-400/50';
+                  const overlay = s.accent === 'cyan'
+                    ? 'from-cyan-400/18 via-transparent to-emerald-400/10'
+                    : 'from-emerald-400/18 via-transparent to-cyan-400/10';
+                  const Icon = s.icon;
 
-                <div className="space-y-4">
-                  {[
-                    { title: 'Traffic Gen', body: 'Generate synthetic traffic and attack-like patterns.' },
-                    { title: 'Node.js Stream', body: 'Stream packets live over Socket.IO.' },
-                    { title: 'Python AI', body: 'Score anomalies in real time using Isolation Forest.' },
-                    { title: 'Dashboard', body: 'Visualize threats, origins, and forensic details in a clean UI.' },
-                  ].map((s, idx) => (
+                  return (
                     <MotionDiv
                       key={s.title}
                       initial={{ opacity: 0, y: 14 }}
                       whileInView={{ opacity: 1, y: 0 }}
-                      viewport={{ once: true, amount: 0.35 }}
-                      transition={{ duration: 0.5, ease: 'easeOut', delay: idx * 0.04 }}
-                      className="relative pl-12"
+                      viewport={{ once: true, amount: 0.25 }}
+                      transition={{ duration: 0.5, ease: 'easeOut', delay: idx * 0.05 }}
+                      whileHover={{ y: -6 }}
+                      className={[
+                        'group relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md',
+                        'p-5 sm:p-6 transition-colors duration-200',
+                        borderHover,
+                      ].join(' ')}
                     >
-                      <div className="absolute left-0 top-5 h-9 w-9 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md grid place-items-center">
-                        <span className="text-xs font-semibold text-zinc-200">{idx + 1}</span>
+                      <div
+                        aria-hidden="true"
+                        className={[
+                          'pointer-events-none absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200',
+                          'bg-gradient-to-br',
+                          overlay,
+                        ].join(' ')}
+                      />
+
+                      <div className="relative flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-400">Step {s.n}</div>
+                          <div className="mt-2 text-base font-semibold text-white tracking-tight">{s.title}</div>
+                        </div>
+                        <div className="h-11 w-11 shrink-0 rounded-xl border border-white/10 bg-black/30 backdrop-blur-md grid place-items-center">
+                          <Icon className="h-5 w-5 text-zinc-100" />
+                        </div>
                       </div>
 
-                      <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-md p-4 sm:p-5">
-                        <div className="text-sm font-semibold text-white">{s.title}</div>
-                        <div className="mt-1 text-sm text-zinc-300 leading-relaxed">{s.body}</div>
+                      <p className="relative mt-3 text-sm text-zinc-300 leading-relaxed">
+                        {s.body}
+                      </p>
+
+                      <div className="relative mt-4 flex flex-wrap gap-2">
+                        {s.chips.map((c) => (
+                          <span
+                            key={c}
+                            className="inline-flex items-center rounded-full border border-white/10 bg-black/20 px-2.5 py-1 text-[11px] text-zinc-200"
+                          >
+                            {c}
+                          </span>
+                        ))}
                       </div>
+
+                      <div
+                        aria-hidden="true"
+                        className="pointer-events-none absolute -bottom-10 -right-10 h-28 w-28 rounded-full blur-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-emerald-400/10"
+                      />
                     </MotionDiv>
-                  ))}
-                </div>
+                  );
+                })}
               </div>
             </div>
 
@@ -418,10 +485,15 @@ export default function LandingPage() {
                     { k: 'Forensics', v: 'Origins + incidents' },
                     { k: 'Source', v: 'MongoDB truth' },
                   ].map((x) => (
-                    <div key={x.k} className="rounded-xl border border-white/10 bg-black/20 backdrop-blur-md p-3">
+                    <MotionDiv
+                      key={x.k}
+                      whileHover={{ y: -4 }}
+                      transition={{ type: 'spring', stiffness: 260, damping: 22 }}
+                      className="rounded-xl border border-white/10 bg-black/20 backdrop-blur-md p-3 hover:border-emerald-400/30 transition-colors duration-200"
+                    >
                       <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-400">{x.k}</div>
                       <div className="mt-1 text-sm font-semibold text-white">{x.v}</div>
-                    </div>
+                    </MotionDiv>
                   ))}
                 </div>
               </MotionDiv>
