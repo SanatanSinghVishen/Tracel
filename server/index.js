@@ -476,8 +476,36 @@ function getAiServiceUrl() {
     if (raw) {
         try {
             // Normalize to origin (strip any path).
-            return new URL(raw).origin;
+            const origin = new URL(raw).origin;
+            const ext = getServiceExternalOrigin();
+            if (ext) {
+                try {
+                    if (new URL(ext).origin === origin) {
+                        warnAiConfigOncePerInterval('[AI] Misconfigured AI_SERVICE_URL: points to this backend; falling back to AI_ENGINE_URL/AI_PREDICT_URL', {
+                            AI_SERVICE_URL: raw,
+                            AI_ENGINE_URL: String(process.env.AI_ENGINE_URL || '').trim() || undefined,
+                            AI_PREDICT_URL: String(process.env.AI_PREDICT_URL || '').trim() || undefined,
+                            RENDER_EXTERNAL_URL: String(process.env.RENDER_EXTERNAL_URL || '').trim() || undefined,
+                        });
+                        return getAiBaseUrl();
+                    }
+                } catch {
+                    // best-effort
+                }
+            }
+            return origin;
         } catch {
+            // If it can't be parsed, still guard against obviously pointing at ourselves.
+            const ext = getServiceExternalOrigin();
+            if (ext && String(ext).trim() === raw) {
+                warnAiConfigOncePerInterval('[AI] Misconfigured AI_SERVICE_URL: points to this backend; falling back to AI_ENGINE_URL/AI_PREDICT_URL', {
+                    AI_SERVICE_URL: raw,
+                    AI_ENGINE_URL: String(process.env.AI_ENGINE_URL || '').trim() || undefined,
+                    AI_PREDICT_URL: String(process.env.AI_PREDICT_URL || '').trim() || undefined,
+                    RENDER_EXTERNAL_URL: String(process.env.RENDER_EXTERNAL_URL || '').trim() || undefined,
+                });
+                return getAiBaseUrl();
+            }
             return raw;
         }
     }
