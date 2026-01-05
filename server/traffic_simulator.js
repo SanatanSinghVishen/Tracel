@@ -392,7 +392,11 @@ function createTrafficStream({ owner, emitPacket, persistPacket, getAiReady } = 
 
         // --- STEP 1: ASK AI FOR VERDICT ---
         const aiUrl = (!isAiDisabled() && aiReady) ? getAiPredictUrl() : null;
-        if (!isAiDisabled() && aiReady && aiUrl) {
+        if (!isAiDisabled() && !aiReady) {
+            // AI still waking; skip scoring quietly.
+            packetData.is_anomaly = false;
+            packetData.anomaly_score = null;
+        } else if (!isAiDisabled() && aiReady && aiUrl) {
             try {
                 if (Date.now() < aiBackoffUntilMs) {
                     packetData.is_anomaly = false;
@@ -449,12 +453,15 @@ function createTrafficStream({ owner, emitPacket, persistPacket, getAiReady } = 
                     detail,
                 });
             }
-        } else if (!isAiDisabled() && !aiUrl) {
+        } else if (!isAiDisabled() && aiReady && !aiUrl) {
             packetData.is_anomaly = false;
             packetData.anomaly_score = null;
             warnAiOncePerInterval('[SIMULATOR] AI not configured (skipping scoring)', {
                 hint: 'Set AI_SERVICE_URL to your ai-engine Render service (e.g., https://<ai-service>.onrender.com). You can also set AI_ENGINE_URL or AI_PREDICT_URL as fallbacks.',
                 RENDER_EXTERNAL_URL: String(process.env.RENDER_EXTERNAL_URL || '').trim() || undefined,
+                AI_SERVICE_URL: String(process.env.AI_SERVICE_URL || '').trim() || undefined,
+                AI_ENGINE_URL: String(process.env.AI_ENGINE_URL || '').trim() || undefined,
+                AI_PREDICT_URL: String(process.env.AI_PREDICT_URL || '').trim() || undefined,
             });
         } else {
             packetData.is_anomaly = false;
