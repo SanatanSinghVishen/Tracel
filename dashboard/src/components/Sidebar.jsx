@@ -32,7 +32,7 @@ const Sidebar = () => {
   ];
 
   return (
-    <aside className="w-[72px] md:w-[260px] shrink-0 h-full bg-zinc-950 border-r border-zinc-800">
+    <aside className="w-14 sm:w-[72px] md:w-[260px] shrink-0 h-full bg-zinc-950 border-r border-zinc-800">
       <div className="h-full p-3 md:p-4 flex flex-col">
 
         {/* Brand */}

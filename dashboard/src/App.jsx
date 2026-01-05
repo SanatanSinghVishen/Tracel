@@ -57,7 +57,7 @@ function AppShell() {
 
   return (
     <SocketProvider>
-      <div className="h-screen min-h-screen font-sans overflow-hidden bg-zinc-950 text-white">
+      <div className="h-[100svh] min-h-[100svh] font-sans overflow-hidden bg-zinc-950 text-white">
         <div className="h-full min-w-0 flex">
           <Sidebar />
 

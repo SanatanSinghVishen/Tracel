@@ -447,15 +447,15 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
         <div className="glass-card glow-hover p-5 hover-lift">
           <p className="text-slate-400 text-xs uppercase tracking-wider">Total Packets</p>
-          <p className="mt-2 text-3xl font-semibold text-white data-mono tabular-nums whitespace-nowrap leading-none">
+          <p className="mt-2 text-2xl sm:text-3xl font-semibold text-white data-mono tabular-nums whitespace-nowrap leading-none">
             {stats.packets.toLocaleString()}
           </p>
-          <p className="mt-2 text-xs text-slate-400">Streaming from {connection.serverUrl}</p>
+          <p className="mt-2 text-xs text-slate-400 break-all">Streaming from {connection.serverUrl}</p>
         </div>
 
         <div className="glass-card glow-hover p-5 hover-lift">
           <p className="text-slate-400 text-xs uppercase tracking-wider">Threats (24 Hours)</p>
-          <p className="mt-2 text-3xl font-semibold text-white data-mono tabular-nums whitespace-nowrap leading-none">
+          <p className="mt-2 text-2xl sm:text-3xl font-semibold text-white data-mono tabular-nums whitespace-nowrap leading-none">
             {stats.threats.toLocaleString()}
           </p>
         </div>
@@ -481,15 +481,22 @@ export default function Dashboard() {
 
         <div className="glass-card glow-hover p-5 hover-lift">
           <p className="text-slate-400 text-xs uppercase tracking-wider">Last Packet</p>
-          <p className="mt-2 text-sm text-slate-200">
-            <span className="text-slate-400">Source:</span> {currentPacket?.source_ip || '—'}
-          </p>
-          <p className="mt-1 text-sm text-slate-200">
-            <span className="text-slate-400">Bytes:</span> {typeof currentPacket?.bytes === 'number' ? `${currentPacket.bytes} B` : '—'}
-          </p>
-          <p className="mt-1 text-sm text-slate-200">
-            <span className="text-slate-400">Method:</span> {currentPacket?.method || '—'}
-          </p>
+          <div className="mt-2 text-sm text-slate-200 space-y-1 min-w-0">
+            <div className="min-w-0">
+              <span className="text-slate-400">Source:</span>{' '}
+              <span className="break-all">{currentPacket?.source_ip || '—'}</span>
+            </div>
+            <div className="min-w-0">
+              <span className="text-slate-400">Bytes:</span>{' '}
+              <span className="break-all">
+                {typeof currentPacket?.bytes === 'number' ? `${currentPacket.bytes} B` : '—'}
+              </span>
+            </div>
+            <div className="min-w-0">
+              <span className="text-slate-400">Method:</span>{' '}
+              <span className="break-all">{currentPacket?.method || '—'}</span>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -497,11 +504,11 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 min-w-0 flex-1 min-h-0 items-stretch">
         {/* Traffic */}
         <div className="glass-card glow-hover lg:col-span-2 p-5 sm:p-6 flex flex-col min-h-0 h-full animate-fade-up">
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
             <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
               <Wifi size={16} className="text-slate-200" /> {trafficView === 'globe' ? 'Global Traffic' : 'Live Bandwidth'}
             </h2>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="flex bg-zinc-900 p-1 rounded-lg border border-zinc-800">
                 <button
                   type="button"

@@ -410,7 +410,7 @@ export default function ChatAssistant({
       <AnimatePresence>
         {open ? (
           <MotionDiv
-            className="fixed bottom-6 right-6 z-[70] w-[min(92vw,420px)]"
+            className="fixed bottom-4 right-4 sm:bottom-6 sm:right-6 z-[70] w-[min(92vw,420px)]"
             variants={panelVariants}
             initial="hidden"
             animate="show"
