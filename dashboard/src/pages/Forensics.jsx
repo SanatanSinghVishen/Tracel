@@ -1552,14 +1552,14 @@ export default function Forensics() {
             </div>
 
             {/* Origins */}
-            <div className="lg:col-span-7 glass rounded-2xl border border-white/10 p-4 hover:bg-white/10 transition hover-lift">
-              <div>
+            <div className="lg:col-span-7 glass rounded-2xl border border-white/10 p-4 hover:bg-white/10 transition hover-lift flex flex-col">
+              <div className="shrink-0">
                 <div className="text-xs text-slate-400 uppercase tracking-wider">Origins</div>
                 <div className="mt-0.5 text-sm font-semibold text-white">Where attacks come from</div>
                 <div className="mt-1 text-sm text-slate-300">Country-level breakdown.</div>
               </div>
 
-              <div className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-2">
+              <div className="mt-4 space-y-2 flex-1 min-h-0 overflow-y-auto pr-2 overscroll-contain touch-pan-y">
                 {intelLoading ? (
                   <>
                     <div className="h-9 rounded-xl bg-white/5 border border-white/10 skeleton" />
