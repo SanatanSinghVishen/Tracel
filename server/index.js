@@ -2012,7 +2012,29 @@ app.post('/api/chat', async (req, res) => {
 
         const currentMode = attackModeByOwner.get(ownerUserId) ? 'Attack Mode' : 'Normal Mode';
 
-        const intel = await getThreatIntelReportFromHeaders(req.headers, { sinceHours: 24, limit: 10000 });
+        // Keep this consistent with the UI's /api/threat-intel behavior:
+        // - If Mongo is configured+connected, use Mongo-backed computation.
+        // - Otherwise fall back to the AI report service (with server-side fallbacks).
+        const intel = await (async () => {
+            const sinceHours = 24;
+            const limit = 10000;
+
+            if (mongoUrl) {
+                await waitForMongoConnected(25_000);
+                if (isMongoConnected()) {
+                    const to = new Date();
+                    const from = new Date(to.getTime() - sinceHours * 60 * 60 * 1000);
+                    return computeThreatIntelFromMongo({
+                        ownerUserId,
+                        since: from,
+                        to,
+                        limit,
+                    });
+                }
+            }
+
+            return getThreatIntelReportFromHeaders(req.headers, { sinceHours, limit });
+        })();
         const topIP = Array.isArray(intel?.topHostileIps) && intel.topHostileIps[0]?.ip ? intel.topHostileIps[0].ip : '—';
         const topCountry = Array.isArray(intel?.geoTopCountries) && intel.geoTopCountries[0]?.name ? intel.geoTopCountries[0].name : '—';
         const threats24h = typeof intel?.totalThreats === 'number' ? intel.totalThreats : null;
