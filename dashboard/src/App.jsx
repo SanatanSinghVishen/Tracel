@@ -135,7 +135,14 @@ function AppShell() {
               }
               data-scroll-wrapper="app"
             >
-              <div data-scroll-content className={isDashboardRoute ? 'h-full min-h-0' : 'min-h-full'}>
+              <div
+                data-scroll-content
+                className={
+                  isDashboardRoute
+                    ? 'min-h-full md:h-full md:min-h-0'
+                    : 'min-h-full'
+                }
+              >
                 <Outlet />
               </div>
             </main>
