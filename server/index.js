@@ -279,7 +279,11 @@ function getRetryAfterMsFromHeaders(headers, fallbackMs) {
 // Used by the dashboard to show a boot overlay while the separate ai-engine service wakes.
 let isAIReady = false;
 
-const AI_WAKE_POLL_MS = Math.max(15_000, parseInt(String(process.env.AI_HEALTH_POLL_MS || '15000'), 10) || 15_000);
+const defaultAiWakePollMs = isHostedEnvironment() ? 60_000 : 15_000;
+const AI_WAKE_POLL_MS = Math.max(
+    defaultAiWakePollMs,
+    parseInt(String(process.env.AI_WAKE_POLL_MS || process.env.AI_HEALTH_POLL_MS || String(defaultAiWakePollMs)), 10) || defaultAiWakePollMs
+);
 
 async function checkAIHealth() {
     // Manual-equivalent wake check:
@@ -629,7 +633,12 @@ const defaultAiPollMs = isHostedEnvironment() ? 60_000 : 15_000;
 setInterval(() => {
     // Frequent polling should be "light" (no model warmup flag) to avoid 429s.
     pollAiHealthOnce({ load: false }).catch(() => void 0);
-}, Math.max(15_000, Math.min(parseInt(process.env.AI_HEALTH_POLL_MS || String(defaultAiPollMs), 10) || defaultAiPollMs, 60_000)));
+}, (() => {
+    const raw = parseInt(process.env.AI_HEALTH_POLL_MS || String(defaultAiPollMs), 10) || defaultAiPollMs;
+    // Allow slower than 60s in hosted envs.
+    const maxMs = isHostedEnvironment() ? 300_000 : 60_000;
+    return Math.max(15_000, Math.min(raw, maxMs));
+})());
 pollAiHealthOnce({ load: true }).catch(() => void 0);
 
 const memoryStore = new MemoryStore({
