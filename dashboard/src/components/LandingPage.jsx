@@ -4,11 +4,18 @@ import { motion } from 'framer-motion';
 import {
   ArrowRight,
   Cpu,
+  Github,
+  Globe,
   Globe2,
+  Linkedin,
+  LogIn,
+  Mail,
   Radar,
   ShieldAlert,
   Sparkles,
+  Twitter,
 } from 'lucide-react';
+import { SignedOut, SignInButton, SignUpButton } from '@clerk/clerk-react';
 
 const MotionDiv = motion.div;
 
@@ -122,11 +129,6 @@ function HeroVisual() {
             </g>
           </svg>
         </div>
-
-        <div className="absolute left-5 bottom-5 inline-flex items-center gap-2 rounded-full border border-white/10 bg-black/35 backdrop-blur-md px-3 py-1.5 text-[11px] text-zinc-200">
-          <Sparkles className="h-3.5 w-3.5 text-emerald-300" />
-          <span className="tracking-[0.18em] uppercase">Cyber-Industrial Core</span>
-        </div>
       </div>
     </MotionDiv>
   );
@@ -168,6 +170,25 @@ function GlassFeatureTile({ icon: Icon, title, body, accent = 'green' }) {
 }
 
 export default function LandingPage() {
+  const creator = {
+    name: (import.meta.env.VITE_PORTFOLIO_NAME || '').trim(),
+    tagline: (import.meta.env.VITE_PORTFOLIO_TAGLINE || '').trim(),
+    links: {
+      website: (import.meta.env.VITE_PORTFOLIO_WEBSITE || '').trim(),
+      github: (import.meta.env.VITE_PORTFOLIO_GITHUB || '').trim(),
+      linkedin: (import.meta.env.VITE_PORTFOLIO_LINKEDIN || '').trim(),
+      x: (import.meta.env.VITE_PORTFOLIO_X || '').trim(),
+      email: (import.meta.env.VITE_PORTFOLIO_EMAIL || '').trim(),
+    },
+  };
+
+  const hasAnyLink =
+    !!creator.links.website ||
+    !!creator.links.github ||
+    !!creator.links.linkedin ||
+    !!creator.links.x ||
+    !!creator.links.email;
+
   const headline = 'The Future of Network Threat Simulation.';
   const words = useMemo(() => splitWords(headline), []);
 
@@ -198,7 +219,7 @@ export default function LandingPage() {
       {
         icon: Globe2,
         title: '3D Forensics',
-        body: 'Investigate origins and incidents with clear visual summaries—without heavy 3D on the landing page.',
+        body: 'Investigate origins and incidents with clear visual summaries and geo intelligence.',
         accent: 'green',
       },
     ],
@@ -212,16 +233,20 @@ export default function LandingPage() {
       {/* HERO (Full Viewport) */}
       <section className="relative min-h-[100svh] flex items-center">
         <div className="mx-auto w-full max-w-screen-2xl px-4 sm:px-6 py-14 sm:py-16">
+          {/* Header */}
+          <div className="mb-10 flex items-center justify-between gap-4">
+            <div className="inline-flex items-center gap-3">
+              <div className="h-11 w-11 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md grid place-items-center">
+                <ShieldAlert className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <div className="text-[18px] uppercase tracking-[0.28em] text-zinc-300">TRACEL</div>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
             <motion.div className="lg:col-span-7" variants={heroContainer} initial="hidden" animate="show">
-              <motion.div variants={heroItem}>
-                <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 backdrop-blur-md px-3 py-1.5 text-[11px] text-zinc-200">
-                  <ShieldAlert className="h-4 w-4 text-emerald-300" />
-                  <span className="uppercase tracking-[0.22em]">TRACEL</span>
-                  <span className="text-zinc-500">/</span>
-                  <span className="uppercase tracking-[0.22em]">Cyber-Industrial</span>
-                </div>
-              </motion.div>
 
               <motion.h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight leading-[1.04]">
                 {words.map((w, idx) => (
@@ -239,7 +264,7 @@ export default function LandingPage() {
                 Visualize. Detect. Secure. Real-time anomaly detection powered by Isolation Forest.
               </motion.p>
 
-              <motion.div variants={heroItem} className="mt-8 flex flex-col sm:flex-row gap-3">
+              <motion.div variants={heroItem} className="mt-8 flex flex-col sm:flex-row sm:items-center gap-3">
                 <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }} transition={{ type: 'spring', stiffness: 260, damping: 18 }}>
                   <Link
                     to="/dashboard"
@@ -251,6 +276,21 @@ export default function LandingPage() {
                     </span>
                   </Link>
                 </motion.div>
+
+                <SignedOut>
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <SignInButton mode="modal" forceRedirectUrl="/dashboard">
+                      <button className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md px-6 py-3.5 text-sm text-zinc-200 hover:text-white hover:border-emerald-400/30 transition">
+                        <LogIn className="h-4 w-4" /> Log in
+                      </button>
+                    </SignInButton>
+                    <SignUpButton mode="modal" forceRedirectUrl="/dashboard">
+                      <button className="inline-flex items-center justify-center gap-2 rounded-xl border border-emerald-300/60 bg-emerald-400 px-6 py-3.5 text-sm font-semibold text-black hover:brightness-110 transition">
+                        Create account <ArrowRight className="h-4 w-4" />
+                      </button>
+                    </SignUpButton>
+                  </div>
+                </SignedOut>
               </motion.div>
             </motion.div>
 
@@ -273,10 +313,10 @@ export default function LandingPage() {
           >
             <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-400">Capabilities</div>
             <h2 className="mt-2 text-2xl sm:text-3xl font-semibold text-white tracking-tight">
-              Glass tiles with neon signal.
+              Real-time security insights, built for speed.
             </h2>
             <p className="mt-2 text-sm text-zinc-300 max-w-2xl">
-              Fast, readable, and responsive — cyber-industrial dark mode with glass depth.
+              Tracel streams simulated traffic, scores anomalies, and surfaces threats with clear forensics.
             </p>
           </MotionDiv>
 
@@ -358,12 +398,12 @@ export default function LandingPage() {
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-400">Performance</div>
+                    <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-400">Purpose</div>
                     <div className="mt-2 text-lg font-semibold text-white tracking-tight">
-                      High-impact visuals, low load time.
+                      Simulate. Detect. Investigate.
                     </div>
                     <p className="mt-2 text-sm text-zinc-300 leading-relaxed">
-                      No heavy 3D libraries on this page—just CSS/SVG tricks and Framer Motion interactions.
+                      Tracel helps you stress-test networks with realistic attack patterns and use AI to flag anomalies in real time.
                     </p>
                   </div>
                   <div className="h-11 w-11 rounded-xl border border-white/10 bg-black/30 backdrop-blur-md grid place-items-center">
@@ -373,10 +413,10 @@ export default function LandingPage() {
 
                 <div className="mt-5 grid grid-cols-2 gap-3">
                   {[
-                    { k: 'Theme', v: 'Dark + Glass' },
-                    { k: 'Accents', v: 'Neon' },
-                    { k: 'Motion', v: 'Staggered' },
-                    { k: 'UX', v: 'Responsive' },
+                    { k: 'Simulator', v: 'Node.js stream' },
+                    { k: 'AI', v: 'Isolation Forest' },
+                    { k: 'Forensics', v: 'Origins + incidents' },
+                    { k: 'Source', v: 'MongoDB truth' },
                   ].map((x) => (
                     <div key={x.k} className="rounded-xl border border-white/10 bg-black/20 backdrop-blur-md p-3">
                       <div className="text-[10px] uppercase tracking-[0.22em] text-zinc-400">{x.k}</div>
@@ -389,6 +429,88 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+
+      {/* FOOTER */}
+      <footer className="relative border-t border-white/10">
+        <div className="mx-auto w-full max-w-screen-2xl px-4 sm:px-6 py-10">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6">
+            <div>
+              <div className="text-[12px] uppercase tracking-[0.28em] text-zinc-300">TRACEL</div>
+
+              <div className="mt-4 text-xs text-zinc-400">
+                Built by{' '}
+                <span className="text-zinc-200 font-semibold">
+                  {creator.name ? creator.name : 'Your Name'}
+                </span>
+                {creator.tagline ? <span className="text-zinc-500"> — {creator.tagline}</span> : null}
+              </div>
+            </div>
+
+            {hasAnyLink ? (
+              <div className="flex items-center gap-2">
+                {creator.links.website ? (
+                  <a
+                    href={creator.links.website}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Website"
+                    title="Website"
+                    className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md hover:border-emerald-400/30 hover:bg-white/10 transition grid place-items-center"
+                  >
+                    <Globe className="h-5 w-5 text-zinc-100" />
+                  </a>
+                ) : null}
+                {creator.links.github ? (
+                  <a
+                    href={creator.links.github}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="GitHub"
+                    title="GitHub"
+                    className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md hover:border-emerald-400/30 hover:bg-white/10 transition grid place-items-center"
+                  >
+                    <Github className="h-5 w-5 text-zinc-100" />
+                  </a>
+                ) : null}
+                {creator.links.linkedin ? (
+                  <a
+                    href={creator.links.linkedin}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="LinkedIn"
+                    title="LinkedIn"
+                    className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md hover:border-emerald-400/30 hover:bg-white/10 transition grid place-items-center"
+                  >
+                    <Linkedin className="h-5 w-5 text-zinc-100" />
+                  </a>
+                ) : null}
+                {creator.links.x ? (
+                  <a
+                    href={creator.links.x}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="X (Twitter)"
+                    title="X (Twitter)"
+                    className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md hover:border-emerald-400/30 hover:bg-white/10 transition grid place-items-center"
+                  >
+                    <Twitter className="h-5 w-5 text-zinc-100" />
+                  </a>
+                ) : null}
+                {creator.links.email ? (
+                  <a
+                    href={`mailto:${creator.links.email}`}
+                    aria-label="Email"
+                    title="Email"
+                    className="h-10 w-10 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md hover:border-emerald-400/30 hover:bg-white/10 transition grid place-items-center"
+                  >
+                    <Mail className="h-5 w-5 text-zinc-100" />
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
