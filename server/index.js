@@ -124,6 +124,31 @@ function warnAiConfigOncePerInterval(message, meta) {
 }
 
 function getAiPredictUrl() {
+    // Prefer AI_SERVICE_URL as the canonical ai-engine base URL.
+    const svc = String(process.env.AI_SERVICE_URL || '').trim();
+    if (svc) {
+        try {
+            const candidate = new URL('/predict', svc).toString();
+            const ext = getServiceExternalOrigin();
+            if (ext) {
+                try {
+                    if (new URL(candidate).origin === ext) {
+                        warnAiConfigOncePerInterval('[AI] Misconfigured AI_SERVICE_URL: points to this service; set it to your ai-engine service URL', {
+                            AI_SERVICE_URL: svc,
+                            RENDER_EXTERNAL_URL: String(process.env.RENDER_EXTERNAL_URL || '').trim() || undefined,
+                        });
+                        return null;
+                    }
+                } catch {
+                    // best-effort
+                }
+            }
+            return candidate;
+        } catch {
+            // Fall through.
+        }
+    }
+
     const explicit = String(process.env.AI_PREDICT_URL || '').trim();
     if (explicit) {
         const ext = getServiceExternalOrigin();

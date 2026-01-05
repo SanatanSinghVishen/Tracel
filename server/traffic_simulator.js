@@ -27,6 +27,16 @@ function getServiceExternalOrigin() {
     }
 }
 
+function getAiServiceUrl() {
+    const raw = String(process.env.AI_SERVICE_URL || '').trim();
+    if (!raw) return null;
+    try {
+        return new URL(raw).origin;
+    } catch {
+        return raw;
+    }
+}
+
 const TARGET_IP = "10.0.0.1";
 // Simulate multiple internal services behind a load balancer / subnet.
 const TARGET_SERVICE_IPS = [
@@ -93,6 +103,25 @@ const ATTACK_DST_PORTS = [
 ];
 
 function getAiPredictUrl() {
+    // Prefer AI_SERVICE_URL as the canonical base for the ai-engine service.
+    const service = getAiServiceUrl();
+    if (service) {
+        const ext = getServiceExternalOrigin();
+        try {
+            const candidate = new URL('/predict', service).toString();
+            if (ext && new URL(candidate).origin === ext) {
+                warnAiOncePerInterval('[SIMULATOR] AI misconfigured: AI_SERVICE_URL points to this service; set it to your ai-engine URL', {
+                    AI_SERVICE_URL: String(process.env.AI_SERVICE_URL || '').trim() || undefined,
+                    RENDER_EXTERNAL_URL: String(process.env.RENDER_EXTERNAL_URL || '').trim() || undefined,
+                });
+                return null;
+            }
+            return candidate;
+        } catch {
+            // Fall through.
+        }
+    }
+
     const explicit = String(process.env.AI_PREDICT_URL || '').trim();
     if (explicit) {
         const ext = getServiceExternalOrigin();
@@ -158,6 +187,10 @@ const aiClient = axios.create({
     httpAgent: aiHttpAgent,
     httpsAgent: aiHttpsAgent,
 });
+
+// Backoff when the AI endpoint rate-limits us (HTTP 429).
+let aiBackoffUntilMs = 0;
+let aiBackoffLevel = 0;
 
 function getRandomTargetServiceIP() {
     return TARGET_SERVICE_IPS[Math.floor(Math.random() * TARGET_SERVICE_IPS.length)];
@@ -347,6 +380,11 @@ function createTrafficStream({ owner, emitPacket, persistPacket } = {}) {
         const aiUrl = !isAiDisabled() ? getAiPredictUrl() : null;
         if (!isAiDisabled() && aiUrl) {
             try {
+                if (Date.now() < aiBackoffUntilMs) {
+                    packetData.is_anomaly = false;
+                    packetData.anomaly_score = null;
+                    // Skip scoring during backoff window.
+                } else {
                 const aiId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
                 const response = await aiClient.post(
                     aiUrl,
@@ -369,6 +407,9 @@ function createTrafficStream({ owner, emitPacket, persistPacket } = {}) {
                 packetData.anomaly_score = Number.isFinite(scoreNum) ? scoreNum : null;
                 packetData.ai_id = response?.data?.id || response?.data?.ai_id || aiId;
                 packetData.is_anomaly = false;
+                aiBackoffUntilMs = 0;
+                aiBackoffLevel = 0;
+                }
             } catch (error) {
                 packetData.is_anomaly = false;
                 packetData.anomaly_score = null;
@@ -377,6 +418,15 @@ function createTrafficStream({ owner, emitPacket, persistPacket } = {}) {
                 const detail = error?.response?.data;
                 const code = error?.code;
                 const msg = error?.message;
+
+                if (status === 429) {
+                    const retryAfter = Number(error?.response?.headers?.['retry-after']);
+                    const baseMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 5000;
+                    aiBackoffLevel = Math.min(aiBackoffLevel + 1, 6);
+                    const backoffMs = Math.min(baseMs * (2 ** aiBackoffLevel), 60_000);
+                    aiBackoffUntilMs = Date.now() + backoffMs;
+                }
+
                 warnAiOncePerInterval('[SIMULATOR] AI score unavailable (using null score)', {
                     url: aiUrl,
                     code,
@@ -389,7 +439,7 @@ function createTrafficStream({ owner, emitPacket, persistPacket } = {}) {
             packetData.is_anomaly = false;
             packetData.anomaly_score = null;
             warnAiOncePerInterval('[SIMULATOR] AI not configured (skipping scoring)', {
-                hint: 'Set AI_ENGINE_URL to your ai-engine Render service (e.g., https://<ai-service>.onrender.com) or set AI_PREDICT_URL to the full /predict endpoint.',
+                hint: 'Set AI_SERVICE_URL to your ai-engine Render service (e.g., https://<ai-service>.onrender.com). You can also set AI_ENGINE_URL or AI_PREDICT_URL as fallbacks.',
                 RENDER_EXTERNAL_URL: String(process.env.RENDER_EXTERNAL_URL || '').trim() || undefined,
             });
         } else {
