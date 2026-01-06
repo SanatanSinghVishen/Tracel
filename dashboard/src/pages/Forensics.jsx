@@ -1200,7 +1200,6 @@ export default function Forensics() {
                 <div className="text-sm text-slate-200 font-semibold">No AI scores yet</div>
                 <div className="mt-1 text-xs text-slate-400">
                   This chart appears empty when the AI engine is offline or hasn’t produced scores.
-                  Start the Python AI at <span className="data-mono text-slate-200">http://127.0.0.1:5000</span> and wait a few seconds.
                 </div>
               </div>
             </div>
@@ -1247,7 +1246,7 @@ export default function Forensics() {
               />
 
               <Legend
-                wrapperStyle={{ color: '#e2e8f0' }}
+                wrapperStyle={{ color: '#e4e4e7' }}
                 formatter={(value) => {
                   if (value === 'score') return 'AI score (lower = suspicious)';
                   if (value === 'threshold') return 'Dynamic threshold';
@@ -1272,10 +1271,11 @@ export default function Forensics() {
                 type="monotone"
                 dataKey="threshold"
                 name="threshold"
-                stroke="#34d399"
+                stroke="#a3e635"
                 strokeWidth={2}
-                strokeDasharray="10 6"
+                strokeDasharray="8 5"
                 dot={false}
+                legendType="line"
                 connectNulls={false}
                 isAnimationActive
                 animationDuration={250}
@@ -1285,10 +1285,11 @@ export default function Forensics() {
                 type="monotone"
                 dataKey="mean"
                 name="mean"
-                stroke="rgba(16, 185, 129, 0.55)"
-                strokeWidth={1.5}
-                strokeDasharray="6 4"
+                stroke="rgba(228, 228, 231, 0.55)"
+                strokeWidth={1.25}
+                strokeDasharray="2 6"
                 dot={false}
+                legendType="line"
                 connectNulls={false}
                 isAnimationActive
                 animationDuration={250}
@@ -1299,9 +1300,10 @@ export default function Forensics() {
                 dataKey="score"
                 name="score"
                 stroke="#10b981"
-                strokeWidth={2}
+                strokeWidth={2.5}
                 fill="url(#scoreFill)"
                 dot={false}
+                legendType="rect"
                 connectNulls={false}
                 isAnimationActive
                 animationDuration={250}
@@ -1312,6 +1314,7 @@ export default function Forensics() {
                 name="anomalies"
                 dataKey="score"
                 fill="#ef4444"
+                legendType="circle"
                 isAnimationActive
                 animationDuration={250}
               />
@@ -1321,8 +1324,11 @@ export default function Forensics() {
                   data={safePoints}
                   name="safe"
                   dataKey="score"
-                  fill="#22c55e"
-                  fillOpacity={0.55}
+                  fill="#86efac"
+                  fillOpacity={0.45}
+                  stroke="#22c55e"
+                  strokeWidth={1}
+                  legendType="diamond"
                   isAnimationActive
                   animationDuration={250}
                 />
@@ -1509,11 +1515,10 @@ export default function Forensics() {
                         }}
                         itemStyle={{ color: '#e2e8f0' }}
                       />
-                      <Legend />
                       <Pie data={intelReport.pie} dataKey="value" nameKey="name" outerRadius={80}>
                         <Cell fill="#10b981" />
-                        <Cell fill="#34d399" />
-                        <Cell fill="#6ee7b7" />
+                        <Cell fill="#a3e635" />
+                        <Cell fill="#16a34a" />
                       </Pie>
                     </PieChart>
                   </ResponsiveContainer>
@@ -1535,7 +1540,7 @@ export default function Forensics() {
 
                 <div className="glass rounded-xl border border-white/10 px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#34d399' }} />
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#a3e635' }} />
                     <span className="font-semibold text-slate-200">Protocol</span>
                   </div>
                   <div className="mt-1 text-slate-300">It tricks the basic “rules of the road” of networking to slow things down.</div>
@@ -1543,7 +1548,7 @@ export default function Forensics() {
 
                 <div className="glass rounded-xl border border-white/10 px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#6ee7b7' }} />
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#16a34a' }} />
                     <span className="font-semibold text-slate-200">Application</span>
                   </div>
                   <div className="mt-1 text-slate-300">It targets the website/app itself by repeatedly hitting pages or actions.</div>
