@@ -1642,7 +1642,6 @@ async function computeThreatIntelFromMongo({ ownerUserId, since, to, limit }) {
         timestamp: { $gte: from, $lt: until },
     };
 
-    const countries = GEO_COUNTRY_NAMES;
 
     // Vector derivation: respects explicit values (attack_vector) and otherwise
     // matches the heuristic used across the app.
@@ -1674,48 +1673,6 @@ async function computeThreatIntelFromMongo({ ownerUserId, since, to, limit }) {
                         ],
                     },
                 },
-            },
-        },
-    };
-
-    const countryExpr = {
-        $let: {
-            vars: {
-                explicit: { $trim: { input: { $ifNull: ['$source_country', ''] } } },
-                ipStr: { $ifNull: ['$source_ip', ''] },
-            },
-            in: {
-                $cond: [
-                    { $gt: [{ $strLenCP: '$$explicit' }, 0] },
-                    '$$explicit',
-                    {
-                        $let: {
-                            vars: {
-                                firstOctetStr: { $arrayElemAt: [{ $split: ['$$ipStr', '.'] }, 0] },
-                            },
-                            in: {
-                                $let: {
-                                    vars: {
-                                        firstInt: {
-                                            $convert: {
-                                                input: '$$firstOctetStr',
-                                                to: 'int',
-                                                onError: 0,
-                                                onNull: 0,
-                                            },
-                                        },
-                                    },
-                                    in: {
-                                        $arrayElemAt: [
-                                            countries,
-                                            { $mod: [{ $abs: '$$firstInt' }, countries.length] },
-                                        ],
-                                    },
-                                },
-                            },
-                        },
-                    },
-                ],
             },
         },
     };
@@ -1813,19 +1770,54 @@ async function computeThreatIntelFromMongo({ ownerUserId, since, to, limit }) {
             ];
         })(),
         (async () => {
-            const rows = await Packet.aggregate([
+            // IMPORTANT: Keep geo origin naming consistent with the live globe.
+            // We prefer stored source_country, but if it's missing we fall back to the
+            // same ipToCountryName() hash used elsewhere (FNV-1a over full IP string).
+
+            const explicitRows = await Packet.aggregate([
                 { $match: baseMatch },
-                { $addFields: { country: countryExpr } },
-                { $group: { _id: '$country', count: { $sum: 1 } } },
-                { $sort: { count: -1 } },
-                // Safety cap; in practice this stays small (we map to ~24 countries).
-                { $limit: 200 },
+                { $match: { source_country: { $nin: [null, ''] } } },
+                { $group: { _id: '$source_country', count: { $sum: 1 } } },
             ]);
 
-            const normalized = (rows || []).map((r) => ({
-                name: String(r._id || ''),
-                count: Number(r.count || 0),
-            }));
+            const missingIpRows = await Packet.aggregate([
+                { $match: baseMatch },
+                { $match: { $or: [{ source_country: { $in: [null, ''] } }, { source_country: { $exists: false } }] } },
+                { $match: { source_ip: { $nin: [null, ''] } } },
+                { $group: { _id: '$source_ip', count: { $sum: 1 } } },
+            ]);
+
+            const byCountry = new Map();
+            let accounted = 0;
+
+            for (const r of explicitRows || []) {
+                const name = String(r?._id || '').trim() || 'Unknown';
+                const count = Number(r?.count || 0);
+                if (!Number.isFinite(count) || count <= 0) continue;
+                byCountry.set(name, (byCountry.get(name) || 0) + count);
+                accounted += count;
+            }
+
+            for (const r of missingIpRows || []) {
+                const ip = String(r?._id || '').trim();
+                const count = Number(r?.count || 0);
+                if (!ip) continue;
+                if (!Number.isFinite(count) || count <= 0) continue;
+                const country = ipToCountryName(ip);
+                byCountry.set(country, (byCountry.get(country) || 0) + count);
+                accounted += count;
+            }
+
+            const unknown = Math.max(0, Number(totalThreats || 0) - accounted);
+            if (unknown > 0) {
+                byCountry.set('Unknown', (byCountry.get('Unknown') || 0) + unknown);
+            }
+
+            const normalized = Array.from(byCountry.entries())
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 200)
+                .map(([name, count]) => ({ name, count }));
+
             return allocateCountryPercentages(normalized, totalThreats);
         })(),
     ]);
