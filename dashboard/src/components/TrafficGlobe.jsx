@@ -49,6 +49,13 @@ export default function TrafficGlobe() {
   const containerRef = useRef(null);
   const { width, height } = useElementSize(containerRef);
 
+  // react-globe.gl falls back to a fairly large default canvas height when
+  // height is undefined. When our parent tile is sized via min-height/flex,
+  // the first measurement can be 0, which makes the tile jump/expand.
+  // Provide a deterministic fallback to keep layout stable.
+  const renderWidth = width > 0 ? width : 1;
+  const renderHeight = height > 0 ? height : 260;
+
   const [arcsData, setArcsData] = useState([]);
   const [threatPoints, setThreatPoints] = useState([]);
   const [userLocation, setUserLocation] = useState(null);
@@ -413,8 +420,8 @@ export default function TrafficGlobe() {
 
       <Globe
         ref={globeRef}
-        width={width || undefined}
-        height={height || undefined}
+        width={renderWidth}
+        height={renderHeight}
         backgroundColor={cyberColors.bg}
         globeImageUrl="https://unpkg.com/three-globe/example/img/earth-night.jpg"
         bumpImageUrl="https://unpkg.com/three-globe/example/img/earth-topology.png"

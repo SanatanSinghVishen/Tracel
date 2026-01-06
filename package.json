@@ -5,6 +5,8 @@
   "scripts": {
     "install:all": "npm --prefix dashboard install && npm --prefix server install",
     "dev": "concurrently -n dashboard,server -c cyan,magenta \"npm --prefix dashboard run dev\" \"npm --prefix server run dev\"",
+    "dev:ai": "node scripts/run-ai-engine.js",
+    "dev:full": "concurrently -n dashboard,server,ai -c cyan,magenta,green \"npm --prefix dashboard run dev\" \"npm --prefix server run dev\" \"node scripts/run-ai-engine.js\"",
     "dev:dashboard": "npm --prefix dashboard run dev",
     "dev:server": "npm --prefix server run dev",
     "build": "npm --prefix dashboard run build",

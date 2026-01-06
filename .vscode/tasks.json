@@ -1,28 +1,65 @@
 {
-  "version": "2.0.0",
-  "tasks": [
-    {
-      "label": "dev: server",
-      "type": "shell",
-      "command": "npm --prefix server run dev",
-      "isBackground": true,
-      "problemMatcher": []
-    },
-    {
-      "label": "dev: dashboard",
-      "type": "shell",
-      "command": "npm --prefix dashboard run dev",
-      "isBackground": true,
-      "problemMatcher": []
-    },
-    {
-      "label": "dev: all",
-      "dependsOrder": "parallel",
-      "dependsOn": [
-        "dev: server",
-        "dev: dashboard"
-      ],
-      "problemMatcher": []
-    }
-  ]
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "dev: server",
+			"type": "shell",
+			"command": "npm --prefix server run dev",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "dev: dashboard",
+			"type": "shell",
+			"command": "npm --prefix dashboard run dev",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "dev: ai-engine",
+			"type": "shell",
+			"command": "npm run dev:ai",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "dev: all",
+			"dependsOrder": "parallel",
+			"dependsOn": [
+				"dev: server",
+				"dev: dashboard"
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "dev: full",
+			"dependsOrder": "parallel",
+			"dependsOn": [
+				"dev: server",
+				"dev: dashboard",
+				"dev: ai-engine"
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "check: anomaly country distribution",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"-e",
+				"fetch('http://localhost:3001/api/packets?limit=200&anomaly=1').then(r=>r.json()).then(j=>{const m=new Map();for(const p of (j.packets||[])){const c=(p&&p.source_country)||'Unknown';m.set(c,(m.get(c)||0)+1);}const out=[...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,15).map(([country,count])=>({country,count}));console.log(JSON.stringify({count:(j.packets||[]).length,top:out},null,2));}).catch(e=>{console.error(String(e&&e.stack||e));process.exit(1);});"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "check: anomaly country distribution (safe quoting)",
+			"type": "shell",
+			"command": "node",
+			"args": [
+				"-e",
+				"fetch(\"http://localhost:3001/api/packets?limit=200&anomaly=1\").then(r=>r.json()).then(j=>{const m=new Map();for(const p of (j.packets||[])){const c=(p&&p.source_country)||\"Unknown\";m.set(c,(m.get(c)||0)+1);}const out=[...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,15).map(([country,count])=>({country,count}));console.log(JSON.stringify({count:(j.packets||[]).length,top:out},null,2));}).catch(e=>{console.error(String((e&&e.stack)||e));process.exit(1);});"
+			],
+			"isBackground": false
+		}
+	]
 }

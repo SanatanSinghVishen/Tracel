@@ -10,7 +10,7 @@ import math
 import time
 
 from pymongo import MongoClient
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
 
 app = Flask(__name__)
 
@@ -51,9 +51,29 @@ def _log_slow_requests(response):
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = Path(os.getenv("MODEL_PATH", str(BASE_DIR / "model.pkl")))
 
-# Load shared env vars (so this service can reuse server's MONGO_URL, etc.)
+# Load env vars for this service.
+# IMPORTANT: do NOT blindly load server/.env, because it defines PORT=3001 for Express.
+# If we import that into the AI process, it will try to bind to 3001 and conflict.
 load_dotenv(BASE_DIR / '.env', override=False)
-load_dotenv(BASE_DIR.parent / 'server' / '.env', override=False)
+
+# Optionally reuse a few server env values (Mongo) without importing unrelated keys.
+_server_env_path = BASE_DIR.parent / 'server' / '.env'
+if _server_env_path.exists():
+    try:
+        _server_env = dotenv_values(_server_env_path)
+        for _k in (
+            'MONGO_URL',
+            'MONGODB_URI',
+            'MONGO_URI',
+            'MONGO_DB_NAME',
+            'TRACEL_LOG_LEVEL',
+        ):
+            _v = (_server_env.get(_k) or '').strip() if _server_env else ''
+            if _v and not (os.getenv(_k) or '').strip():
+                os.environ[_k] = _v
+    except Exception:
+        # Ignore malformed .env; AI engine can run without Mongo.
+        pass
 
 
 def load_model():

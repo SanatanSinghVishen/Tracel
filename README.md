@@ -24,6 +24,18 @@ npm run install:all
 npm run dev
 ```
 
+If you want AI scoring locally (recommended for full feature parity), start all three apps:
+
+```bash
+npm run dev:full
+```
+
+Notes for AI engine:
+
+- Requires Python 3.10+ and the AI deps installed:
+  - `python -m pip install -r ai-engine/requirements.txt`
+- The server is already configured (via `server/.env`) to call `http://127.0.0.1:5000/predict`.
+
 3. Open the dashboard:
 
 - `http://localhost:5173/` (Vite will use another port if busy)

@@ -61,19 +61,27 @@ export const ATTACK_HOTSPOTS = [
   ...COUNTRY_COORDS,
 ];
 
+function fnv1a32(input) {
+  // Deterministic 32-bit hash (fast, no deps). Good enough to spread IPs.
+  const s = String(input || '');
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i += 1) {
+    h ^= s.charCodeAt(i);
+    // h *= 16777619 (with 32-bit overflow)
+    h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+  }
+  return h >>> 0;
+}
+
 /**
- * Deterministically map an IP -> a country coordinate object, using first octet.
+ * Deterministically map an IP -> a country coordinate object.
  * Same IP => same "origin", with O(1) cost and no external API calls.
+ * Uses a hash of the full IP string to avoid collapsing many IPs
+ * (e.g. 192.168.x.x) into the same country.
  */
 export function getCoordsFromIP(ip) {
   const s = (ip || '').trim();
-  const firstPart = s.split('.')[0];
-  const firstOctet = Number.parseInt(firstPart, 10);
-
-  // Fallback for malformed inputs
-  if (!Number.isFinite(firstOctet) || firstOctet < 0) return COUNTRY_COORDS[0];
-
-  // Deterministic mapping (simple + stable)
-  const idx = Math.abs(firstOctet) % COUNTRY_COORDS.length;
-  return COUNTRY_COORDS[idx];
+  if (!s) return COUNTRY_COORDS[0];
+  const idx = fnv1a32(s) % COUNTRY_COORDS.length;
+  return COUNTRY_COORDS[idx] || COUNTRY_COORDS[0];
 }

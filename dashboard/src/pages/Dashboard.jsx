@@ -17,7 +17,7 @@ function formatUptime(seconds) {
 }
 
 export default function Dashboard() {
-  const { isLoaded, getToken } = useAuth();
+  const { isLoaded, getToken, userId } = useAuth();
   const { socket, connection } = useSocket();
   const anonId = useMemo(() => getOrCreateAnonId(), []);
   const [trafficView, setTrafficView] = useState(() => readDefaultTrafficView());
@@ -31,6 +31,35 @@ export default function Dashboard() {
 
   const countsRefreshTimerRef = useRef(null);
   const lastCountsRefreshMsRef = useRef(0);
+
+  // Stabilize KPIs across refresh: keep last known totals per identity.
+  const identityKey = useMemo(() => {
+    if (typeof userId === 'string' && userId) return `u_${userId}`;
+    return `a_${anonId}`;
+  }, [userId, anonId]);
+
+  const packetsTotalStorageKey = useMemo(() => `tracel_kpi_total_packets_${identityKey}`, [identityKey]);
+
+  const persistPacketsTotal = (value) => {
+    if (!Number.isFinite(value) || value < 0) return;
+    try {
+      window.localStorage.setItem(packetsTotalStorageKey, String(Math.floor(value)));
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(packetsTotalStorageKey);
+      const parsed = raw != null ? parseInt(String(raw), 10) : NaN;
+      if (Number.isFinite(parsed) && parsed >= 0) {
+        setStats((s) => (s.packets === parsed ? s : { ...s, packets: parsed }));
+      }
+    } catch {
+      // ignore
+    }
+  }, [packetsTotalStorageKey]);
 
   // --- System Bootup Overlay (Render AI cold-start handling) ---
   const [bootVisible, setBootVisible] = useState(true);
@@ -145,7 +174,7 @@ export default function Dashboard() {
         setTrafficData(last60);
         setCurrentPacket(packets[0] || null);
 
-        const mongoPacketsTotal = typeof packetsCountData?.totalPackets === 'number' ? packetsCountData.totalPackets : null;
+        const apiPacketsTotal = typeof packetsCountData?.totalPackets === 'number' ? packetsCountData.totalPackets : null;
         const mongoThreats24h = typeof threatsData?.totalThreats === 'number' ? threatsData.totalThreats : null;
 
         const sessionStartedAt = typeof data?.session?.startedAt === 'string' ? data.session.startedAt : null;
@@ -155,9 +184,12 @@ export default function Dashboard() {
         }
 
         const threatsFromPackets = packets.reduce((acc, p) => acc + (p?.is_anomaly ? 1 : 0), 0);
+
+        if (apiPacketsTotal != null) persistPacketsTotal(apiPacketsTotal);
         setStats((s) => ({
           ...s,
-          packets: mongoPacketsTotal ?? packets.length,
+          // Never fall back to the limited recent-sample length; that causes refresh-to-refresh drift.
+          packets: apiPacketsTotal ?? s.packets,
           // Threats KPI should be Mongo-backed for correctness.
           threats: mongoThreats24h ?? threatsFromPackets,
         }));
@@ -282,9 +314,12 @@ export default function Dashboard() {
             const threatsBody = await threatsRes.json().catch(() => ({}));
             const packetsBody = await packetsRes.json().catch(() => ({}));
 
+            const nextPacketsTotal = typeof packetsBody?.totalPackets === 'number' ? packetsBody.totalPackets : null;
+            if (nextPacketsTotal != null) persistPacketsTotal(nextPacketsTotal);
+
             setStats((s) => ({
               ...s,
-              packets: typeof packetsBody?.totalPackets === 'number' ? packetsBody.totalPackets : s.packets,
+              packets: nextPacketsTotal ?? s.packets,
               threats: typeof threatsBody?.totalThreats === 'number' ? threatsBody.totalThreats : s.threats,
             }));
           } catch {

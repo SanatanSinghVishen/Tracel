@@ -1299,18 +1299,26 @@ const GEO_COUNTRY_NAMES = [
     'Nigeria',
 ];
 
+function fnv1a32(input) {
+    const s = String(input || '');
+    let h = 0x811c9dc5;
+    for (let i = 0; i < s.length; i += 1) {
+        h ^= s.charCodeAt(i);
+        // h *= 16777619 (32-bit overflow)
+        h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0;
+    }
+    return h >>> 0;
+}
+
 function ipToCountryName(ip) {
     const s = typeof ip === 'string' ? ip.trim() : '';
-    const firstPart = s.split('.')[0];
-    const first = Number.parseInt(firstPart, 10);
-    if (!Number.isFinite(first) || first < 0) return GEO_COUNTRY_NAMES[0];
-    return GEO_COUNTRY_NAMES[Math.abs(first) % GEO_COUNTRY_NAMES.length];
+    if (!s) return 'Unknown';
+    const idx = fnv1a32(s) % GEO_COUNTRY_NAMES.length;
+    return GEO_COUNTRY_NAMES[idx] || 'Unknown';
 }
 
 function ensurePacketCountry(packet) {
     if (!packet || typeof packet !== 'object') return packet;
-    const existing = typeof packet.source_country === 'string' ? packet.source_country.trim() : '';
-    if (existing) return packet;
     const ip = typeof packet.source_ip === 'string' ? packet.source_ip.trim() : '';
     if (!ip) return packet;
     packet.source_country = ipToCountryName(ip);
