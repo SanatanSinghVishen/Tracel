@@ -19,6 +19,8 @@ export default function ContactSubmissions() {
     user?.emailAddresses?.[0]?.emailAddress ||
     '';
 
+  const signedInUserId = user?.id || auth.userId || '';
+
   const serverUrl = useMemo(() => {
     const fromSocket = typeof connection?.serverUrl === 'string' ? connection.serverUrl : '';
     const fromEnv = getServerUrl();
@@ -130,6 +132,7 @@ export default function ContactSubmissions() {
               This page is <span className="text-white font-semibold">Admin-only</span>.
             </p>
             <p className="mt-1 text-xs text-slate-400">Signed in as {email || 'user'}</p>
+            {signedInUserId ? <p className="mt-1 text-xs text-slate-500">User ID: {signedInUserId}</p> : null}
             {adminEmail ? <p className="mt-1 text-xs text-slate-500">Client admin email hint: {adminEmail}</p> : null}
             {error ? <div className="mt-3 text-sm text-red-300">{error}</div> : null}
           </div>

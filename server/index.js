@@ -1215,14 +1215,54 @@ function verifyJwtIfConfigured(token) {
 
 function extractEmailFromClaims(claims) {
     if (!claims || typeof claims !== 'object') return '';
-    const candidates = [
+
+    // Clerk JWTs can vary depending on templates and token types.
+    // Be permissive in where we look for an email address.
+    const directCandidates = [
         claims.email,
         claims.email_address,
         claims.primary_email,
+        claims.primary_email_address,
         claims?.user?.email,
+        claims?.user?.email_address,
+        claims?.user?.primary_email,
+        claims?.user?.primary_email_address,
+        claims?.public_metadata?.email,
+        claims?.publicMetadata?.email,
+        claims?.unsafe_metadata?.email,
+        claims?.unsafeMetadata?.email,
     ];
-    const email = candidates.find((v) => typeof v === 'string' && v.includes('@'));
-    return (email || '').trim().toLowerCase();
+
+    const fromDirect = directCandidates.find((v) => typeof v === 'string' && v.includes('@'));
+    if (fromDirect) return String(fromDirect).trim().toLowerCase();
+
+    // Common Clerk shapes: email_addresses is an array of objects.
+    const listCandidates = [
+        claims.email_addresses,
+        claims?.user?.email_addresses,
+        claims?.user?.emailAddresses,
+    ];
+
+    for (const list of listCandidates) {
+        if (!Array.isArray(list)) continue;
+        for (const entry of list) {
+            if (typeof entry === 'string' && entry.includes('@')) return entry.trim().toLowerCase();
+            if (entry && typeof entry === 'object') {
+                const v = entry.email_address || entry.emailAddress || entry.email;
+                if (typeof v === 'string' && v.includes('@')) return v.trim().toLowerCase();
+            }
+        }
+    }
+
+    return '';
+}
+
+function getAdminNotConfiguredError() {
+    // Avoid leaking any specific configured values.
+    if (!ADMIN_EMAIL && !ADMIN_USER_ID) {
+        return 'Admin not configured: set ADMIN_EMAIL or ADMIN_USER_ID on the server';
+    }
+    return 'Admin only';
 }
 
 async function getAuthContextFromHeaders(headers) {
@@ -2031,7 +2071,7 @@ app.post('/api/admin/reset-mongo', async (req, res) => {
         }
 
         const auth = await getAuthContextFromHeaders(req.headers);
-        if (!auth.isAdmin) return res.status(403).json({ error: 'Admin only' });
+        if (!auth.isAdmin) return res.status(403).json({ error: getAdminNotConfiguredError() });
 
         // If JWT verification is configured, require verified tokens for destructive admin ops.
         if (!auth.verified) {
@@ -2520,7 +2560,7 @@ app.get('/api/contact', async (req, res) => {
         }
 
         const auth = await getAuthContextFromHeaders(req.headers);
-        if (!auth.isAdmin) return res.status(403).json({ error: 'Admin only' });
+        if (!auth.isAdmin) return res.status(403).json({ error: getAdminNotConfiguredError() });
         if (!auth.verified) return res.status(403).json({ error: 'Admin token must be verified' });
 
         // If the log file does not exist yet, return empty list.
