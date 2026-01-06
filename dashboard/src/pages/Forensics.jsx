@@ -75,6 +75,100 @@ function bucketKeyUtc(date, bucket) {
   return d.toISOString().slice(0, 7) + '-01T00:00:00.000Z';
 }
 
+function useInkHover() {
+  const [hovered, setHovered] = useState(false);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+
+  const updatePos = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPos({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+  };
+
+  return {
+    hovered,
+    pos,
+    handlers: {
+      onMouseEnter: (e) => {
+        updatePos(e);
+        setHovered(true);
+      },
+      onMouseMove: (e) => {
+        if (!hovered) return;
+        updatePos(e);
+      },
+      onMouseLeave: () => setHovered(false),
+    },
+  };
+}
+
+function InkFillBar({ pct, heightClass }) {
+  const ink = useInkHover();
+  const safePct = Math.max(0, Math.min(100, Number(pct) || 0));
+
+  return (
+    <div className={[heightClass, 'w-full rounded bg-white/10 overflow-hidden'].join(' ')}>
+      <div
+        {...ink.handlers}
+        className={[heightClass, 'relative overflow-hidden bg-emerald-400/70'].join(' ')}
+        style={{ width: `${safePct}%` }}
+      >
+        <span
+          aria-hidden="true"
+          className={[
+            'pointer-events-none absolute rounded-full bg-emerald-300',
+            'opacity-0 scale-0',
+            'transition-[transform,opacity] duration-700 ease-out',
+            ink.hovered ? 'opacity-100 scale-[22]' : '',
+          ].join(' ')}
+          style={{
+            width: 18,
+            height: 18,
+            left: ink.pos.x,
+            top: ink.pos.y,
+            transform: `translate(-50%, -50%) scale(${ink.hovered ? 22 : 0})`,
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function InkHoverTile({ children, className = '' }) {
+  const ink = useInkHover();
+
+  return (
+    <div
+      {...ink.handlers}
+      className={[
+        'group/tile relative overflow-hidden rounded-2xl border border-white/10 bg-white/5 p-3',
+        'transition-colors duration-300',
+        className,
+      ].join(' ')}
+    >
+      <span
+        aria-hidden="true"
+        className={[
+          'pointer-events-none absolute rounded-full bg-emerald-400',
+          'opacity-0 scale-0',
+          'transition-[transform,opacity] duration-700 ease-out',
+          ink.hovered ? 'opacity-100 scale-[22]' : '',
+        ].join(' ')}
+        style={{
+          width: 18,
+          height: 18,
+          left: ink.pos.x,
+          top: ink.pos.y,
+          transform: `translate(-50%, -50%) scale(${ink.hovered ? 22 : 0})`,
+        }}
+      />
+      <div className="relative z-10">{children}</div>
+    </div>
+  );
+}
+
 export default function Forensics() {
   const { isLoaded, getToken } = useAuth();
   const { socket, connection } = useSocket();
@@ -1370,26 +1464,26 @@ export default function Forensics() {
                 </p>
 
                 <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <div className="glass rounded-2xl border border-white/10 p-3 kpi-tile">
-                    <div className="text-xs text-slate-400">Threats (24h)</div>
-                    <div className="mt-1 text-lg font-semibold text-white data-mono">
+                  <InkHoverTile>
+                    <div className="text-xs text-slate-400 group-hover/tile:text-black/70 transition-colors duration-300">Threats (24h)</div>
+                    <div className="mt-1 text-lg font-semibold text-white group-hover/tile:text-black transition-colors duration-300 data-mono">
                       {intelLoading ? '…' : (intelLoaded ? intelReport.total : '…')}
                     </div>
-                  </div>
+                  </InkHoverTile>
 
-                  <div className="glass rounded-2xl border border-white/10 p-3 kpi-tile">
-                    <div className="text-xs text-slate-400">Last attack seen</div>
-                    <div className="mt-1 text-sm font-semibold text-white">
+                  <InkHoverTile>
+                    <div className="text-xs text-slate-400 group-hover/tile:text-black/70 transition-colors duration-300">Last attack seen</div>
+                    <div className="mt-1 text-sm font-semibold text-white group-hover/tile:text-black transition-colors duration-300">
                       {intelLoading ? '…' : intelLastAttackLabel}
                     </div>
-                  </div>
+                  </InkHoverTile>
 
-                  <div className="glass rounded-2xl border border-white/10 p-3 kpi-tile">
-                    <div className="text-xs text-slate-400">Top origin</div>
-                    <div className="mt-1 text-sm font-semibold text-white truncate">
+                  <InkHoverTile>
+                    <div className="text-xs text-slate-400 group-hover/tile:text-black/70 transition-colors duration-300">Top origin</div>
+                    <div className="mt-1 text-sm font-semibold text-white group-hover/tile:text-black transition-colors duration-300 truncate">
                       {intelLoading ? '…' : intelTopOriginLabel}
                     </div>
-                  </div>
+                  </InkHoverTile>
                 </div>
 
                 <div className="mt-2 text-[11px] text-slate-500">
@@ -1466,10 +1560,7 @@ export default function Forensics() {
                               <span className="data-mono text-sm text-slate-100 truncate">{r.ip}</span>
                             </div>
                             <div className="mt-1 h-1.5 rounded bg-white/10 overflow-hidden">
-                              <div
-                                className="h-1.5 bg-gradient-to-r from-tracel-accent-blue/80 to-tracel-accent-purple/80"
-                                style={{ width: `${pct}%` }}
-                              />
+                              <InkFillBar pct={pct} heightClass="h-1.5" />
                             </div>
                           </div>
 
@@ -1580,10 +1671,7 @@ export default function Forensics() {
                     <div key={c.name} className="flex items-center gap-3">
                       <div className="w-40 text-sm text-slate-200 truncate">{c.name}</div>
                       <div className="flex-1 h-2 rounded bg-white/10 overflow-hidden">
-                        <div
-                          className="h-2 bg-gradient-to-r from-tracel-accent-blue/80 to-tracel-accent-purple/80"
-                          style={{ width: `${c.pct}%` }}
-                        />
+                        <InkFillBar pct={c.pct} heightClass="h-2" />
                       </div>
                       <div className="w-14 text-right text-sm text-slate-400 tabular-nums">{c.pct}%</div>
                     </div>
