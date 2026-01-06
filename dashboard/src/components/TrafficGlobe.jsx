@@ -99,7 +99,9 @@ export default function TrafficGlobe() {
   const zoomBy = useCallback(
     (delta) => {
       const current = povRef.current;
-      const nextAltitude = Math.max(1.6, Math.min(3.4, current.altitude + delta));
+      // Lower altitude => closer (zoom in). Higher altitude => farther (zoom out).
+      // Expand the range so users can zoom much further in/out.
+      const nextAltitude = Math.max(0.65, Math.min(7.5, current.altitude + delta));
       setPov({ altitude: nextAltitude }, 220);
     },
     [setPov]
@@ -381,7 +383,7 @@ export default function TrafficGlobe() {
         <div className="flex items-center gap-1 rounded-lg border border-zinc-800 bg-zinc-950/60 p-1">
           <button
             type="button"
-            onClick={() => zoomBy(+0.25)}
+            onClick={() => zoomBy(-0.25)}
             className="h-8 w-8 rounded-md border border-zinc-800 bg-zinc-900 text-slate-200 hover:bg-zinc-800 transition"
             aria-label="Zoom in"
             title="Zoom in"
@@ -390,7 +392,7 @@ export default function TrafficGlobe() {
           </button>
           <button
             type="button"
-            onClick={() => zoomBy(-0.25)}
+            onClick={() => zoomBy(+0.25)}
             className="h-8 w-8 rounded-md border border-zinc-800 bg-zinc-900 text-slate-200 hover:bg-zinc-800 transition"
             aria-label="Zoom out"
             title="Zoom out"
