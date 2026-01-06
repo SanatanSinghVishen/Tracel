@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Mail } from 'lucide-react';
+import { useUser } from '@clerk/clerk-react';
 import { useSocket } from '../hooks/useSocket.js';
 import { getServerUrl } from '../lib/socket.js';
 
 export default function Contact() {
+  const { user, isLoaded } = useUser();
   const { connection } = useSocket();
   const [form, setForm] = useState({ name: '', email: '', org: '', message: '' });
   const [status, setStatus] = useState({ state: 'idle', error: '' });
@@ -17,6 +19,27 @@ export default function Contact() {
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
   }
+
+  useEffect(() => {
+    if (!isLoaded || !user) return;
+
+    const inferredEmail =
+      user?.primaryEmailAddress?.emailAddress ||
+      user?.emailAddresses?.[0]?.emailAddress ||
+      '';
+
+    const inferredName =
+      user?.fullName ||
+      [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
+      '';
+
+    // Only prefill if the user hasn't typed anything yet.
+    setForm((prev) => ({
+      ...prev,
+      name: prev.name ? prev.name : inferredName,
+      email: prev.email ? prev.email : inferredEmail,
+    }));
+  }, [isLoaded, user]);
 
   async function submit(e) {
     e.preventDefault();
@@ -119,7 +142,7 @@ export default function Contact() {
               onChange={(e) => update('message', e.target.value)}
               rows={4}
               className="mt-2 w-full glass rounded-xl border border-white/10 px-4 py-3 text-sm text-slate-100 outline-none focus:ring-2 focus:ring-tracel-accent-blue/40"
-              placeholder="Tell us what you need (demo, partnership, security review, etc.)"
+              placeholder="Your Message"
             />
           </div>
 
@@ -144,10 +167,6 @@ export default function Contact() {
             </button>
           </div>
         </form>
-
-        <p className="mt-3 text-xs text-slate-400">
-          Messages are sent to the server and stored for review.
-        </p>
       </div>
     </div>
   );
