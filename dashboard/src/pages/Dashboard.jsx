@@ -774,7 +774,7 @@ export default function Dashboard() {
 
         <div className="flex flex-col gap-4 md:col-span-2 lg:col-span-1 md:min-h-0 md:h-full">
           {/* Logs */}
-          <div className="glass-card glow-hover p-5 sm:p-6 flex flex-col animate-fade-up">
+          <div className="glass-card glow-hover p-5 sm:p-6 flex flex-col flex-1 min-h-0 animate-fade-up">
             <h2 className="text-slate-400 mb-3 flex items-center gap-2 uppercase tracking-wider text-[10px]">
               <Terminal size={12} /> Live System Logs
             </h2>

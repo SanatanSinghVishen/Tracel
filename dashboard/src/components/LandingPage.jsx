@@ -629,7 +629,7 @@ export default function LandingPage() {
                     { k: 'Simulator', v: 'Node.js stream' },
                     { k: 'AI', v: 'Isolation Forest' },
                     { k: 'Forensics', v: 'Origins + incidents' },
-                    { k: 'Source', v: 'MongoDB truth' },
+                    { k: 'Assist', v: 'Tracer AI Chatbot' },
                   ].map((x) => (
                     <MotionDiv
                       key={x.k}
