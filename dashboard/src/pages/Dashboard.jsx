@@ -517,7 +517,6 @@ export default function Dashboard() {
           <p className="mt-2 text-2xl sm:text-3xl font-semibold text-white data-mono tabular-nums whitespace-nowrap leading-none">
             {stats.packets.toLocaleString()}
           </p>
-          <p className="mt-2 text-xs text-slate-400 break-all">Streaming from {connection.serverUrl}</p>
         </div>
 
         <div className="glass-card glow-hover p-5 hover-lift">
