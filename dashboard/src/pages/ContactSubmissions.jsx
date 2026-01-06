@@ -11,16 +11,13 @@ export default function ContactSubmissions() {
   const { connection } = useSocket();
   const anonId = useMemo(() => getOrCreateAnonId(), []);
 
+  // Note: The server is the source of truth for admin authorization.
+  // VITE_ADMIN_EMAIL is only used for display/hints.
   const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL || '').trim();
   const email =
     user?.primaryEmailAddress?.emailAddress ||
     user?.emailAddresses?.[0]?.emailAddress ||
     '';
-
-  const isAdmin =
-    isLoaded &&
-    adminEmail.length > 0 &&
-    email.toLowerCase() === adminEmail.toLowerCase();
 
   const serverUrl = useMemo(() => {
     const fromSocket = typeof connection?.serverUrl === 'string' ? connection.serverUrl : '';
@@ -31,6 +28,7 @@ export default function ContactSubmissions() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [submissions, setSubmissions] = useState([]);
+  const [serverAccess, setServerAccess] = useState({ checked: false, ok: false });
 
   const refresh = useCallback(async () => {
     setError('');
@@ -46,8 +44,15 @@ export default function ContactSubmissions() {
       const res = await fetch(`${serverUrl}/api/contact?limit=100`, { headers, credentials: 'include' });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) {
+        // 403 means: signed in but not authorized as admin (or server admin auth not configured).
+        if (res.status === 403) {
+          setServerAccess({ checked: true, ok: false });
+          throw new Error(body?.error ? String(body.error) : 'Admin only');
+        }
         throw new Error(body?.error ? String(body.error) : `Request failed (HTTP ${res.status})`);
       }
+
+      setServerAccess({ checked: true, ok: true });
 
       const list = Array.isArray(body?.submissions) ? body.submissions : [];
       setSubmissions(list);
@@ -59,8 +64,19 @@ export default function ContactSubmissions() {
   }, [serverUrl, auth.isLoaded, auth.getToken, anonId]);
 
   useEffect(() => {
-    if (isAdmin) refresh();
-  }, [isAdmin, refresh]);
+    if (!auth.isLoaded) return;
+    if (!auth.isSignedIn) {
+      setServerAccess({ checked: false, ok: false });
+      setSubmissions([]);
+      setError('');
+      return;
+    }
+
+    refresh();
+  }, [auth.isLoaded, auth.isSignedIn, refresh]);
+
+  const showAdminOnly = auth.isLoaded && auth.isSignedIn && serverAccess.checked && !serverAccess.ok;
+  const showInbox = auth.isLoaded && auth.isSignedIn && serverAccess.checked && serverAccess.ok;
 
   return (
     <div className="min-w-0 space-y-6 animate-fade-in">
@@ -80,9 +96,9 @@ export default function ContactSubmissions() {
           <button
             type="button"
             onClick={refresh}
-            disabled={loading || !isAdmin}
+            disabled={loading || !auth.isLoaded || !auth.isSignedIn}
             className="px-3 py-2 rounded-xl text-xs font-semibold glass border border-white/10 text-slate-100 hover:bg-white/10 disabled:opacity-60"
-            title={!isAdmin ? 'Admin only' : 'Refresh'}
+            title={!auth.isLoaded || !auth.isSignedIn ? 'Sign in to refresh' : 'Refresh'}
           >
             <span className="inline-flex items-center gap-2">
               <RefreshCcw size={14} /> {loading ? 'Refreshing…' : 'Refresh'}
@@ -91,30 +107,36 @@ export default function ContactSubmissions() {
         </div>
       </div>
 
-      {!isAdmin ? (
+      <SignedOut>
         <div className="glass-card glow-hover p-5 sm:p-6 text-slate-200 animate-fade-up">
           <p className="text-sm">
             This page is <span className="text-white font-semibold">Admin-only</span>.
           </p>
           <p className="mt-1 text-xs text-slate-400">Admin email: {adminEmail || 'Not set'}</p>
-
-          <SignedOut>
-            <div className="mt-3">
-              <SignInButton mode="modal" forceRedirectUrl="/contact-submissions">
-                <button className="glass rounded-xl border border-white/10 px-4 py-2 text-sm text-white hover:bg-white/10 transition hover-lift">
-                  Log in
-                </button>
-              </SignInButton>
-            </div>
-          </SignedOut>
-
-          <SignedIn>
-            <p className="mt-2 text-xs text-slate-400">Signed in as {email || 'user'}, but not admin.</p>
-          </SignedIn>
+          <div className="mt-3">
+            <SignInButton mode="modal" forceRedirectUrl="/contact-submissions">
+              <button className="glass rounded-xl border border-white/10 px-4 py-2 text-sm text-white hover:bg-white/10 transition hover-lift">
+                Log in
+              </button>
+            </SignInButton>
+          </div>
         </div>
-      ) : null}
+      </SignedOut>
 
-      {isAdmin ? (
+      <SignedIn>
+        {showAdminOnly ? (
+          <div className="glass-card glow-hover p-5 sm:p-6 text-slate-200 animate-fade-up">
+            <p className="text-sm">
+              This page is <span className="text-white font-semibold">Admin-only</span>.
+            </p>
+            <p className="mt-1 text-xs text-slate-400">Signed in as {email || 'user'}</p>
+            {adminEmail ? <p className="mt-1 text-xs text-slate-500">Client admin email hint: {adminEmail}</p> : null}
+            {error ? <div className="mt-3 text-sm text-red-300">{error}</div> : null}
+          </div>
+        ) : null}
+      </SignedIn>
+
+      {showInbox ? (
         <div className="glass-card glow-hover p-6 sm:p-7 animate-fade-up">
           <div className="flex items-center justify-between gap-4">
             <div className="flex items-center gap-2 text-slate-200 font-semibold text-sm">
