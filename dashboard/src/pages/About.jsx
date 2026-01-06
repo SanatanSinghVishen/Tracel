@@ -163,7 +163,7 @@ export default function About() {
                 <div className="mt-4 grid gap-3">
                   <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
                     <div className="flex items-center gap-2 text-xs text-slate-300 font-semibold">
-                      <Brain className="w-4 h-4 text-emerald-300" />
+                      <Brain className="w-4 h-4 text-tracel-accent-blue" />
                       AI Engine
                     </div>
                     <div className="mt-1 text-xs text-slate-400 leading-relaxed">
@@ -280,7 +280,7 @@ export default function About() {
                 step={1}
                 title="Traffic"
                 subtitle="Live activity (or demo traffic)"
-                icon={<Activity className="w-5 h-5 text-emerald-300" />}
+                icon={<Activity className="w-5 h-5 text-tracel-accent-blue" />}
                 bullets={[
                   "Sends activity in real time",
                   "Can simulate attack-like spikes for demos",
@@ -297,7 +297,7 @@ export default function About() {
                 step={2}
                 title="AI score"
                 subtitle="A quick suspiciousness score"
-                icon={<Brain className="w-5 h-5 text-emerald-300" />}
+                icon={<Brain className="w-5 h-5 text-tracel-accent-blue" />}
                 bullets={["Returns one score per packet", "Lower score = more suspicious"]}
               />
             </div>
@@ -332,7 +332,7 @@ export default function About() {
 
           <div className="mt-5 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
             <FeatureCard
-              icon={<BarChart3 className="w-5 h-5 text-emerald-300" />}
+              icon={<BarChart3 className="w-5 h-5 text-tracel-accent-blue" />}
               title="Forensics AI Score tile"
               body="A live score chart that shows safe vs threat clearly. It keeps a small recent window so it stays fast and readable."
             />
@@ -383,7 +383,7 @@ export default function About() {
                   <SiSocketdotio className="w-4 h-4 text-tracel-accent-purple" /> Socket.IO
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                  <BarChart3 className="w-4 h-4 text-emerald-300" /> Recharts
+                  <BarChart3 className="w-4 h-4 text-tracel-accent-blue" /> Recharts
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
                   <SiThreedotjs className="w-4 h-4 text-tracel-accent-purple" /> three.js
@@ -398,7 +398,7 @@ export default function About() {
               <div className="text-xs text-slate-400 uppercase tracking-wider">Backend</div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                  <SiNodedotjs className="w-4 h-4 text-emerald-300" /> Node.js
+                  <SiNodedotjs className="w-4 h-4 text-tracel-accent-blue" /> Node.js
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
                   <SiExpress className="w-4 h-4 text-slate-100" /> Express
@@ -407,7 +407,7 @@ export default function About() {
                   <SiSocketdotio className="w-4 h-4 text-tracel-accent-purple" /> Socket.IO
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                  <SiMongodb className="w-4 h-4 text-emerald-300" /> MongoDB
+                  <SiMongodb className="w-4 h-4 text-tracel-accent-blue" /> MongoDB
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
                   <SiMongoose className="w-4 h-4 text-tracel-accent-purple" /> Mongoose
@@ -419,16 +419,16 @@ export default function About() {
               <div className="text-xs text-slate-400 uppercase tracking-wider">AI</div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                  <SiPython className="w-4 h-4 text-emerald-300" /> Python
+                  <SiPython className="w-4 h-4 text-tracel-accent-blue" /> Python
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
                   <SiFlask className="w-4 h-4 text-slate-100" /> Flask
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                  <SiScikitlearn className="w-4 h-4 text-emerald-300" /> scikit-learn
+                  <SiScikitlearn className="w-4 h-4 text-tracel-accent-blue" /> scikit-learn
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                  <Package className="w-4 h-4 text-emerald-300" /> joblib
+                  <Package className="w-4 h-4 text-tracel-accent-blue" /> joblib
                 </div>
               </div>
             </div>

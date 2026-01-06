@@ -112,13 +112,13 @@ function InkFillBar({ pct, heightClass }) {
     <div className={[heightClass, 'w-full rounded bg-white/10 overflow-hidden'].join(' ')}>
       <div
         {...ink.handlers}
-        className={[heightClass, 'relative overflow-hidden bg-emerald-400/70'].join(' ')}
+        className={[heightClass, 'relative overflow-hidden bg-tracel-accent-blue/70'].join(' ')}
         style={{ width: `${safePct}%` }}
       >
         <span
           aria-hidden="true"
           className={[
-            'pointer-events-none absolute rounded-full bg-emerald-300',
+            'pointer-events-none absolute rounded-full bg-tracel-accent-blue',
             'opacity-0 scale-0',
             'transition-[transform,opacity] duration-700 ease-out',
             ink.hovered ? 'opacity-100 scale-[22]' : '',
@@ -151,7 +151,7 @@ function InkHoverTile({ children, className = '' }) {
       <span
         aria-hidden="true"
         className={[
-          'pointer-events-none absolute rounded-full bg-emerald-400',
+          'pointer-events-none absolute rounded-full bg-tracel-accent-blue',
           'opacity-0 scale-0',
           'transition-[transform,opacity] duration-700 ease-out',
           ink.hovered ? 'opacity-100 scale-[22]' : '',
@@ -270,7 +270,7 @@ export default function Forensics() {
         <div className="mt-1 flex items-center gap-2">
           <span className="text-xs text-slate-400">Status</span>
           <span className={`text-xs font-semibold ${
-            status === 'THREAT' ? 'text-red-300' : (status === 'UNSCORED' ? 'text-slate-200' : 'text-emerald-300')
+            status === 'THREAT' ? 'text-red-300' : (status === 'UNSCORED' ? 'text-slate-200' : 'text-tracel-accent-blue')
           }`}>
             {status}
           </span>
@@ -1158,7 +1158,7 @@ export default function Forensics() {
                 labelFormatter={(v) => bucketLabelFromKey(v, timelineMeta?.bucket || 'hour')}
                 formatter={(value) => [value, 'Attacks']}
               />
-              <Bar dataKey="attacks" fill="#10b981" />
+              <Bar dataKey="attacks" fill="rgb(var(--tracel-accent-1-rgb))" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -1305,8 +1305,8 @@ export default function Forensics() {
             >
               <defs>
                 <linearGradient id="scoreFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
-                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
+                  <stop offset="5%" stopColor="rgb(var(--tracel-accent-1-rgb))" stopOpacity={0.35} />
+                  <stop offset="95%" stopColor="rgb(var(--tracel-accent-1-rgb))" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
               <CartesianGrid stroke="rgba(255,255,255,0.08)" strokeDasharray="4 4" />
@@ -1365,7 +1365,7 @@ export default function Forensics() {
                 type="monotone"
                 dataKey="threshold"
                 name="threshold"
-                stroke="#a3e635"
+                stroke="rgb(var(--tracel-accent-2-rgb))"
                 strokeWidth={2}
                 strokeDasharray="8 5"
                 dot={false}
@@ -1393,7 +1393,7 @@ export default function Forensics() {
                 type="monotone"
                 dataKey="score"
                 name="score"
-                stroke="#10b981"
+                stroke="rgb(var(--tracel-accent-1-rgb))"
                 strokeWidth={2.5}
                 fill="url(#scoreFill)"
                 dot={false}
@@ -1418,9 +1418,9 @@ export default function Forensics() {
                   data={safePoints}
                   name="safe"
                   dataKey="score"
-                  fill="#86efac"
+                  fill="rgb(var(--tracel-accent-1-rgb))"
                   fillOpacity={0.45}
-                  stroke="#22c55e"
+                  stroke="rgb(var(--tracel-accent-1-rgb))"
                   strokeWidth={1}
                   legendType="diamond"
                   isAnimationActive
@@ -1607,9 +1607,9 @@ export default function Forensics() {
                         itemStyle={{ color: '#e2e8f0' }}
                       />
                       <Pie data={intelReport.pie} dataKey="value" nameKey="name" outerRadius={80}>
-                        <Cell fill="#10b981" />
-                        <Cell fill="#a3e635" />
-                        <Cell fill="#16a34a" />
+                        <Cell fill="rgb(var(--tracel-accent-1-rgb))" />
+                        <Cell fill="rgb(var(--tracel-accent-2-rgb))" />
+                        <Cell fill="rgb(var(--tracel-accent-1-rgb) / 0.65)" />
                       </Pie>
                     </PieChart>
                   </ResponsiveContainer>
@@ -1623,7 +1623,7 @@ export default function Forensics() {
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-slate-300">
                 <div className="glass rounded-xl border border-white/10 px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#10b981' }} />
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: 'rgb(var(--tracel-accent-1-rgb))' }} />
                     <span className="font-semibold text-slate-200">Volumetric</span>
                   </div>
                   <div className="mt-1 text-slate-300">So much traffic hits at once that it clogs the internet pipe.</div>
@@ -1631,7 +1631,7 @@ export default function Forensics() {
 
                 <div className="glass rounded-xl border border-white/10 px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#a3e635' }} />
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: 'rgb(var(--tracel-accent-2-rgb))' }} />
                     <span className="font-semibold text-slate-200">Protocol</span>
                   </div>
                   <div className="mt-1 text-slate-300">It tricks the basic “rules of the road” of networking to slow things down.</div>
@@ -1639,7 +1639,7 @@ export default function Forensics() {
 
                 <div className="glass rounded-xl border border-white/10 px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#16a34a' }} />
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: 'rgb(var(--tracel-accent-1-rgb) / 0.65)' }} />
                     <span className="font-semibold text-slate-200">Application</span>
                   </div>
                   <div className="mt-1 text-slate-300">It targets the website/app itself by repeatedly hitting pages or actions.</div>
@@ -1706,7 +1706,7 @@ export default function Forensics() {
                         }}
                         itemStyle={{ color: '#e2e8f0' }}
                       />
-                      <Bar dataKey="count" fill="#10b981" />
+                      <Bar dataKey="count" fill="rgb(var(--tracel-accent-1-rgb))" />
                     </BarChart>
                   </ResponsiveContainer>
                 )}
@@ -1819,7 +1819,7 @@ export default function Forensics() {
                               className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold border ${
                                 p.is_anomaly
                                   ? 'text-red-300 border-red-500/20 bg-red-500/10'
-                                  : 'text-emerald-300 border-emerald-500/20 bg-emerald-500/10'
+                                  : 'text-tracel-accent-blue border-tracel-accent-blue/20 bg-tracel-accent-blue/10'
                               }`}
                             >
                               {p.is_anomaly ? 'THREAT' : 'SAFE'}
@@ -1872,7 +1872,7 @@ export default function Forensics() {
                   <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-bold border ${
                     selected.is_anomaly
                       ? 'text-red-300 border-red-500/20 bg-red-500/10'
-                      : 'text-emerald-300 border-emerald-500/20 bg-emerald-500/10'
+                      : 'text-tracel-accent-blue border-tracel-accent-blue/20 bg-tracel-accent-blue/10'
                   }`}>
                     {selected.is_anomaly ? 'THREAT' : 'SAFE'}
                   </span>

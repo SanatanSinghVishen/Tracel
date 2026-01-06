@@ -345,10 +345,11 @@ export default function Dashboard() {
   const toggleAttack = (active) => socket.emit('toggle_attack', active);
 
   const status = useMemo(() => {
+    if (!connection.connected) return { label: 'OFFLINE', tone: 'neutral' };
     if (!currentPacket) return { label: 'WAITING', tone: 'neutral' };
     if (currentPacket.is_anomaly) return { label: 'CRITICAL', tone: 'danger' };
     return { label: 'SECURE', tone: 'safe' };
-  }, [currentPacket]);
+  }, [connection.connected, currentPacket]);
 
   const attackActive = !!currentPacket?.is_anomaly;
 
@@ -452,12 +453,14 @@ export default function Dashboard() {
                   }}
                   className={
                     `h-12 w-full flex items-center justify-center gap-2 rounded-xl border border-zinc-800 ` +
-                    `bg-zinc-950/60 text-sm font-semibold transition-all ` +
+                    `text-sm font-semibold transition-all ` +
                     `outline-none focus-visible:ring-2 focus-visible:ring-tracel-accent-blue/40 ` +
-                    (!attackSimEnabled ? 'text-white' : 'text-slate-300 hover:text-white')
+                    (!attackSimEnabled
+                      ? 'text-tracel-accent-blue bg-tracel-accent-blue/15 border-tracel-accent-blue/30'
+                      : 'text-slate-300 bg-zinc-950/60 hover:text-white')
                   }
                 >
-                  <Shield size={16} className={!attackSimEnabled ? 'text-white' : 'text-slate-200'} />
+                  <Shield size={16} className={!attackSimEnabled ? 'text-tracel-accent-blue' : 'text-slate-200'} />
                   Defense
                 </button>
 
@@ -494,7 +497,7 @@ export default function Dashboard() {
                       `transition-transform duration-200 ease-out ` +
                       (attackSimEnabled
                         ? 'translate-x-full bg-red-500/15'
-                        : 'translate-x-0 bg-zinc-950/70')
+                        : 'translate-x-0 bg-tracel-accent-blue/15 border-tracel-accent-blue/30')
                     }
                     aria-hidden="true"
                   />
@@ -511,11 +514,11 @@ export default function Dashboard() {
                       className={
                         `flex items-center justify-center gap-2 px-4 py-2 rounded-md text-xs font-semibold ` +
                         `transition-all outline-none focus-visible:ring-2 focus-visible:ring-tracel-accent-blue/40 ` +
-                        (!attackSimEnabled ? 'text-white' : 'text-slate-300 hover:text-white')
+                        (!attackSimEnabled ? 'text-tracel-accent-blue' : 'text-slate-300 hover:text-white')
                       }
                       title="Defense mode"
                     >
-                      <Shield size={14} className={!attackSimEnabled ? 'text-white' : 'text-slate-200'} />
+                      <Shield size={14} className={!attackSimEnabled ? 'text-tracel-accent-blue' : 'text-slate-200'} />
                       Defense
                     </button>
 
@@ -730,8 +733,8 @@ export default function Dashboard() {
                   <AreaChart data={trafficData}>
                     <defs>
                       <linearGradient id="bytesFillSafe" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.26} />
-                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                        <stop offset="5%" stopColor="rgb(var(--tracel-accent-1-rgb))" stopOpacity={0.26} />
+                        <stop offset="95%" stopColor="rgb(var(--tracel-accent-1-rgb))" stopOpacity={0} />
                       </linearGradient>
                       <linearGradient id="bytesFillDanger" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#ef4444" stopOpacity={0.28} />
@@ -760,7 +763,7 @@ export default function Dashboard() {
                     <Area
                       type="monotone"
                       dataKey="bytes"
-                      stroke={attackActive ? '#ef4444' : '#10b981'}
+                      stroke={attackActive ? '#ef4444' : 'rgb(var(--tracel-accent-1-rgb))'}
                       strokeWidth={2}
                       fill={attackActive ? 'url(#bytesFillDanger)' : 'url(#bytesFillSafe)'}
                       isAnimationActive={false}

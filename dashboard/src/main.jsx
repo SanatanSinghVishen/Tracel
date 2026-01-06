@@ -16,7 +16,7 @@ const clerkJsUrl = (import.meta.env.VITE_CLERK_JS_URL || '').trim() || undefined
 
 const clerkAppearance = {
   variables: {
-    colorPrimary: '#10b981',
+    colorPrimary: 'rgb(var(--tracel-accent-1-rgb))',
     colorDanger: '#ef4444',
     colorBackground: '#020617',
     colorText: '#ffffff',

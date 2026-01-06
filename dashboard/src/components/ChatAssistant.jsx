@@ -439,7 +439,7 @@ export default function ChatAssistant({
                     <div className="text-sm font-semibold text-slate-100 tracking-tight">TRACER</div>
                     <div className="flex items-center gap-2 text-[11px] text-slate-300">
                       <MotionSpan
-                        className="inline-block h-2 w-2 rounded-full bg-emerald-400"
+                        className="inline-block h-2 w-2 rounded-full bg-tracel-accent-blue"
                         animate={{ opacity: [0.25, 1, 0.25] }}
                         transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
                       />

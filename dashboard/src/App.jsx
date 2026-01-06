@@ -14,6 +14,7 @@ import Landing from './pages/Landing';
 import { SocketProvider } from './context/SocketContext.jsx';
 import { disableSmoothScroll, enableSmoothScroll } from './lib/scroller.js';
 import ChatAssistant from './components/ChatAssistant.jsx';
+import { readAccentTheme } from './utils/prefs.js';
 
 const clerkAppearance = {
   elements: {
@@ -78,6 +79,7 @@ function AppShell() {
   const isDashboardRoute = pathname.startsWith('/dashboard');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [isTouchDevice, setIsTouchDevice] = useState(false);
+  const [accentTheme, setAccentTheme] = useState(() => readAccentTheme());
   const { user, isLoaded } = useUser();
   const adminEmail = (import.meta.env.VITE_ADMIN_EMAIL || '').trim();
   const email = useMemo(
@@ -104,6 +106,16 @@ function AppShell() {
     setIsTouchDevice(!!touch);
   }, []);
 
+  useEffect(() => {
+    const sync = () => setAccentTheme(readAccentTheme());
+    window.addEventListener('tracel:accentTheme', sync);
+    window.addEventListener('storage', sync);
+    return () => {
+      window.removeEventListener('tracel:accentTheme', sync);
+      window.removeEventListener('storage', sync);
+    };
+  }, []);
+
   return (
     <SocketProvider>
       <div
@@ -112,9 +124,10 @@ function AppShell() {
             isTouchDevice
               ? 'min-h-[100svh] overflow-x-hidden'
               : 'h-[100svh] min-h-[100svh] overflow-hidden'
-          ) + ' font-sans bg-zinc-950 text-white'
+          ) + ` font-sans bg-zinc-950 text-white theme-accent-${accentTheme}`
         }
       >
+        <div className="hidden theme-accent-emerald theme-accent-blue theme-accent-purple" />
         <div className={(isTouchDevice ? 'min-h-[100svh]' : 'h-full') + ' min-w-0 flex flex-col md:flex-row'}>
           {/* Desktop sidebar */}
           <div className="hidden md:block">

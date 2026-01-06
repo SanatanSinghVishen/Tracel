@@ -4,6 +4,11 @@ export default {
     "./index.html",
     "./src/**/*.{js,ts,jsx,tsx}",
   ],
+  safelist: [
+    'theme-accent-emerald',
+    'theme-accent-blue',
+    'theme-accent-purple',
+  ],
   theme: {
     extend: {
       fontFamily: {
@@ -27,8 +32,10 @@ export default {
             950: "#09090b",
           },
           accent: {
-            blue: "#34d399",
-            purple: "#059669",
+            // Dynamic accent colors (set via CSS variables on app pages).
+            // The Landing page intentionally does not apply these theme classes.
+            blue: "rgb(var(--tracel-accent-1-rgb, 34 197 94) / <alpha-value>)",
+            purple: "rgb(var(--tracel-accent-2-rgb, 5 150 105) / <alpha-value>)",
           },
           surface: {
             glass: "rgba(255,255,255,0.05)",

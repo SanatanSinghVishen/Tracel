@@ -67,18 +67,41 @@ export default function TrafficGlobe() {
   const attackIdleTimeoutRef = useRef(null);
   const requestedLocationRef = useRef(false);
 
+  const [accentSafeColor, setAccentSafeColor] = useState('rgb(34, 197, 94)');
+
+  const readAccentFromCss = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const raw = getComputedStyle(el).getPropertyValue('--tracel-accent-1-rgb').trim();
+    if (!raw) return;
+
+    const parts = raw.split(/\s+/).map((n) => Number(n)).filter((n) => Number.isFinite(n));
+    if (parts.length !== 3) return;
+    setAccentSafeColor(`rgb(${parts[0]}, ${parts[1]}, ${parts[2]})`);
+  }, []);
+
   // Camera focus across recent attack points.
   const attackFocusPointsRef = useRef([]);
   const attackFocusIdxRef = useRef(0);
   const attackFocusTimerRef = useRef(null);
 
+  useEffect(() => {
+    readAccentFromCss();
+    window.addEventListener('tracel:accentTheme', readAccentFromCss);
+    window.addEventListener('storage', readAccentFromCss);
+    return () => {
+      window.removeEventListener('tracel:accentTheme', readAccentFromCss);
+      window.removeEventListener('storage', readAccentFromCss);
+    };
+  }, [readAccentFromCss]);
+
   const cyberColors = useMemo(
     () => ({
-      safe: '#22c55e',
+      safe: accentSafeColor,
       threat: '#f87171',
       bg: '#09090b',
     }),
-    []
+    [accentSafeColor]
   );
 
   const setPov = useCallback((next, ms = 650) => {

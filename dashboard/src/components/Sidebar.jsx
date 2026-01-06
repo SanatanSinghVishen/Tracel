@@ -34,59 +34,16 @@ const Sidebar = () => {
     { icon: Inbox, label: 'Inbox', path: '/contact-submissions' },
   ];
 
-  // Live security status derived from real-time packet stream.
-  const [nowMs, setNowMs] = useState(() => Date.now());
+  // Live security verdict derived from the most recent packet.
+  // Keep in sync with the Dashboard "Security Status" tile.
   const [lastPacketMs, setLastPacketMs] = useState(0);
-  const [lastAnomalyMs, setLastAnomalyMs] = useState(0);
-  const [aiReady, setAiReady] = useState(null);
-
-  useEffect(() => {
-    if (!connection.connected) return undefined;
-
-    const id = window.setInterval(() => setNowMs(Date.now()), 1000);
-    return () => window.clearInterval(id);
-  }, [connection.connected]);
-
-  useEffect(() => {
-    let cancelled = false;
-    let timer = null;
-
-    async function pollStatus() {
-      try {
-        const base = connection.serverUrl || 'http://localhost:3000';
-        const url = new URL('/api/status', base);
-        url.searchParams.set('_', String(Date.now()));
-
-        const res = await fetch(url.toString(), { credentials: 'include', cache: 'no-store' });
-        const data = await res.json().catch(() => ({}));
-        if (cancelled) return;
-
-        setAiReady(!!data?.ai_ready);
-      } catch {
-        if (cancelled) return;
-        setAiReady(false);
-      }
-    }
-
-    if (!connection.connected) {
-      setAiReady(null);
-      return undefined;
-    }
-
-    pollStatus();
-    timer = window.setInterval(pollStatus, 5000);
-
-    return () => {
-      cancelled = true;
-      if (timer) window.clearInterval(timer);
-    };
-  }, [connection.connected, connection.serverUrl]);
+  const [lastPacketWasAnomaly, setLastPacketWasAnomaly] = useState(false);
 
   useEffect(() => {
     function onPacket(packet) {
       const t = Date.now();
       setLastPacketMs(t);
-      if (packet?.is_anomaly) setLastAnomalyMs(t);
+      setLastPacketWasAnomaly(!!packet?.is_anomaly);
     }
 
     socket.on('packet', onPacket);
@@ -97,28 +54,23 @@ const Sidebar = () => {
 
   const securityStatus = useMemo(() => {
     if (!connection.connected) {
-      return { level: 'Offline', pillText: 'Offline', pillClass: 'pill pill-neutral' };
+      return { label: 'OFFLINE', pillText: 'Offline', pillClass: 'pill pill-neutral' };
     }
 
-    if (aiReady === false) {
-      return { level: 'Booting', pillText: 'Warming', pillClass: 'pill pill-neutral' };
+    if (!lastPacketMs) {
+      return { label: 'WAITING', pillText: 'Waiting', pillClass: 'pill pill-neutral' };
     }
 
-    const anomalyWindowMs = 60_000;
-    const hasRecentAnomaly = lastAnomalyMs > 0 && nowMs - lastAnomalyMs <= anomalyWindowMs;
-    if (hasRecentAnomaly) {
-      return { level: 'Critical', pillText: 'Attack', pillClass: 'pill pill-attack' };
+    if (lastPacketWasAnomaly) {
+      return { label: 'CRITICAL', pillText: 'Attack', pillClass: 'pill pill-attack' };
     }
 
-    // If connected but no packets yet, still treat as operational monitoring.
-    const staleWindowMs = 15_000;
-    const hasRecentPackets = lastPacketMs > 0 && nowMs - lastPacketMs <= staleWindowMs;
     return {
-      level: 'Operational',
-      pillText: hasRecentPackets ? 'Live' : 'Live',
+      label: 'SECURE',
+      pillText: 'Live',
       pillClass: 'pill pill-live',
     };
-  }, [connection.connected, aiReady, lastAnomalyMs, lastPacketMs, nowMs]);
+  }, [connection.connected, lastPacketMs, lastPacketWasAnomaly]);
 
   return (
     <aside className="w-14 sm:w-[72px] md:w-[260px] shrink-0 h-full bg-zinc-950 border-r border-zinc-800">
@@ -157,7 +109,7 @@ const Sidebar = () => {
                   <item.icon size={18} className={isActive ? 'text-white' : 'text-zinc-300'} />
                 </div>
                 <span className="hidden md:block font-medium text-sm">{item.label}</span>
-                {isActive ? <span className="ml-auto hidden md:inline-flex h-2 w-5 rounded-full bg-green-500/90" /> : null}
+                {isActive ? <span className="ml-auto hidden md:inline-flex h-2 w-5 rounded-full bg-tracel-accent-blue/90" /> : null}
               </>
             )}
           </NavLink>
@@ -185,7 +137,7 @@ const Sidebar = () => {
                       <item.icon size={18} className={isActive ? 'text-white' : 'text-zinc-300'} />
                     </div>
                     <span className="hidden md:block font-medium text-sm">{item.label}</span>
-                    {isActive ? <span className="ml-auto hidden md:inline-flex h-2 w-5 rounded-full bg-green-500/90" /> : null}
+                    {isActive ? <span className="ml-auto hidden md:inline-flex h-2 w-5 rounded-full bg-tracel-accent-blue/90" /> : null}
                   </>
                 )}
               </NavLink>
@@ -252,7 +204,7 @@ const Sidebar = () => {
           <div className="bg-zinc-900 border border-zinc-800 rounded-lg px-4 py-4">
             <p className="text-xs text-zinc-400">Security Level</p>
             <div className="flex items-center justify-between mt-2">
-              <span className="text-white font-semibold">{securityStatus.level}</span>
+              <span className="text-white font-semibold">{securityStatus.label}</span>
               <span className={securityStatus.pillClass}>{securityStatus.pillText}</span>
             </div>
           </div>

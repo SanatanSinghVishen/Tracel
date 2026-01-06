@@ -3,7 +3,7 @@ import { Settings as SettingsIcon, Wifi, Database, User, RefreshCcw, ChevronDown
 import { useAuth, useUser } from '@clerk/clerk-react';
 import { useSocket } from '../hooks/useSocket.js';
 import { buildAuthHeaders, getOrCreateAnonId } from '../lib/authClient.js';
-import { readDefaultTrafficView, writeDefaultTrafficView } from '../utils/prefs.js';
+import { readAccentTheme, readDefaultTrafficView, writeAccentTheme, writeDefaultTrafficView } from '../utils/prefs.js';
 
 export default function Settings() {
   const { user, isLoaded } = useUser();
@@ -11,7 +11,12 @@ export default function Settings() {
   const { connection } = useSocket();
   const anonId = useMemo(() => getOrCreateAnonId(), []);
 
-  const [defaultTrafficView, setDefaultTrafficView] = useState('bandwidth');
+  const [defaultTrafficView, setDefaultTrafficView] = useState(() =>
+    typeof window === 'undefined' ? 'bandwidth' : readDefaultTrafficView()
+  );
+  const [accentTheme, setAccentTheme] = useState(() =>
+    typeof window === 'undefined' ? 'emerald' : readAccentTheme()
+  );
   const [persistence, setPersistence] = useState({ status: 'unknown', message: '', checkedAt: null });
   const [checking, setChecking] = useState(false);
   const [resetStatus, setResetStatus] = useState({ state: 'idle', message: '' });
@@ -33,12 +38,14 @@ export default function Settings() {
   }, [email, isLoaded]);
 
   useEffect(() => {
-    setDefaultTrafficView(readDefaultTrafficView());
-  }, []);
-
-  useEffect(() => {
     writeDefaultTrafficView(defaultTrafficView);
   }, [defaultTrafficView]);
+
+  useEffect(() => {
+    writeAccentTheme(accentTheme);
+    // Notify the app shell (same tab) to re-read prefs.
+    window.dispatchEvent(new Event('tracel:accentTheme'));
+  }, [accentTheme]);
 
   const checkPersistence = useCallback(async () => {
     if (!connection?.serverUrl) return;
@@ -164,6 +171,36 @@ export default function Settings() {
 
         <div className="glass-card glow-hover p-5 hover-lift interactive animate-fade-up">
             <div className="flex items-center gap-2 text-slate-200 font-semibold text-sm">
+              <SettingsIcon size={16} className="text-slate-200" /> Theme
+            </div>
+            <div className="mt-3 text-sm text-slate-200">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="text-slate-400 text-xs uppercase tracking-wider">Accent theme</div>
+                  <div className="text-sm text-slate-200">Changes the app accent color</div>
+                </div>
+                <div className="relative shrink-0">
+                  <select
+                    value={accentTheme}
+                    onChange={(e) => setAccentTheme(e.target.value)}
+                    className="glass rounded-xl border border-white/10 pl-3 pr-9 py-2 text-sm text-slate-100 outline-none appearance-none cursor-pointer hover:bg-white/10 transition focus:ring-2 focus:ring-tracel-accent-blue/40"
+                    aria-label="Accent theme"
+                  >
+                    <option value="emerald" className="text-slate-900">Emerald</option>
+                    <option value="blue" className="text-slate-900">Blue</option>
+                    <option value="purple" className="text-slate-900">Purple</option>
+                  </select>
+                  <ChevronDown
+                    size={16}
+                    className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-300"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
+        <div className="glass-card glow-hover p-5 hover-lift interactive animate-fade-up">
+            <div className="flex items-center gap-2 text-slate-200 font-semibold text-sm">
               <SettingsIcon size={16} className="text-slate-200" /> Client Preferences
             </div>
             <div className="mt-3 text-sm text-slate-200">
@@ -270,7 +307,7 @@ export default function Settings() {
                     (resetStatus.state === 'error'
                       ? 'border-red-500/30 bg-red-500/10 text-red-100'
                       : resetStatus.state === 'success'
-                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-100'
+                        ? 'border-tracel-accent-blue/30 bg-tracel-accent-blue/10 text-slate-100'
                         : 'border-white/10 bg-white/5 text-slate-200')
                   }
                 >
