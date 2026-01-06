@@ -23,12 +23,12 @@ export default {
       colors: {
         tracel: {
           bg: {
-            900: "#0b1220",
-            950: "#050814",
+            900: "#18181b",
+            950: "#09090b",
           },
           accent: {
-            blue: "#3b82f6",
-            purple: "#8b5cf6",
+            blue: "#34d399",
+            purple: "#059669",
           },
           surface: {
             glass: "rgba(255,255,255,0.05)",

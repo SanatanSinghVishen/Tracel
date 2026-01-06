@@ -163,7 +163,7 @@ export default function About() {
                 <div className="mt-4 grid gap-3">
                   <div className="rounded-2xl border border-white/10 bg-black/20 p-3">
                     <div className="flex items-center gap-2 text-xs text-slate-300 font-semibold">
-                      <Brain className="w-4 h-4 text-amber-300" />
+                      <Brain className="w-4 h-4 text-emerald-300" />
                       AI Engine
                     </div>
                     <div className="mt-1 text-xs text-slate-400 leading-relaxed">
@@ -297,7 +297,7 @@ export default function About() {
                 step={2}
                 title="AI score"
                 subtitle="A quick suspiciousness score"
-                icon={<Brain className="w-5 h-5 text-amber-300" />}
+                icon={<Brain className="w-5 h-5 text-emerald-300" />}
                 bullets={["Returns one score per packet", "Lower score = more suspicious"]}
               />
             </div>
@@ -419,16 +419,16 @@ export default function About() {
               <div className="text-xs text-slate-400 uppercase tracking-wider">AI</div>
               <div className="mt-3 flex flex-wrap gap-2">
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                  <SiPython className="w-4 h-4 text-amber-300" /> Python
+                  <SiPython className="w-4 h-4 text-emerald-300" /> Python
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
                   <SiFlask className="w-4 h-4 text-slate-100" /> Flask
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                  <SiScikitlearn className="w-4 h-4 text-amber-300" /> scikit-learn
+                  <SiScikitlearn className="w-4 h-4 text-emerald-300" /> scikit-learn
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                  <Package className="w-4 h-4 text-amber-300" /> joblib
+                  <Package className="w-4 h-4 text-emerald-300" /> joblib
                 </div>
               </div>
             </div>

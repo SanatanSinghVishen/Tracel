@@ -315,7 +315,7 @@ export default function Forensics() {
         </div>
 
         {help ? (
-          <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-72 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-white/10 bg-slate-950/90 px-3 py-2 text-xs text-slate-200 shadow-xl backdrop-blur-xl whitespace-normal break-words group-hover:block">
+          <div className="pointer-events-none absolute left-1/2 top-full z-20 mt-2 hidden w-72 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-white/10 bg-zinc-950/90 px-3 py-2 text-xs text-slate-200 shadow-xl backdrop-blur-xl whitespace-normal break-words group-hover:block">
             <div className="text-[11px] font-semibold text-slate-100">{label}</div>
             <div className="mt-1 text-[11px] text-slate-300 leading-snug">{help}</div>
           </div>
@@ -912,7 +912,7 @@ export default function Forensics() {
               </button>
 
               {timelineRangeOpen ? (
-                <div className="absolute right-0 top-full z-30 mt-2 w-80 rounded-2xl border border-white/10 bg-slate-950/90 p-3 shadow-xl backdrop-blur-xl">
+                <div className="absolute right-0 top-full z-30 mt-2 w-80 rounded-2xl border border-white/10 bg-zinc-950/90 p-3 shadow-xl backdrop-blur-xl">
                   <div className="text-[11px] font-semibold text-slate-100">Range mode</div>
                   <div className="mt-2 grid grid-cols-5 gap-2">
                     {[
@@ -1064,7 +1064,7 @@ export default function Forensics() {
                 labelFormatter={(v) => bucketLabelFromKey(v, timelineMeta?.bucket || 'hour')}
                 formatter={(value) => [value, 'Attacks']}
               />
-              <Bar dataKey="attacks" fill="#8b5cf6" />
+              <Bar dataKey="attacks" fill="#10b981" />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -1126,7 +1126,7 @@ export default function Forensics() {
               {scoreSettingsOpen ? (
                 <div
                   role="menu"
-                  className="absolute right-0 top-full z-30 mt-2 w-72 rounded-2xl border border-white/10 bg-slate-950/90 p-3 shadow-xl backdrop-blur-xl"
+                  className="absolute right-0 top-full z-30 mt-2 w-72 rounded-2xl border border-white/10 bg-zinc-950/90 p-3 shadow-xl backdrop-blur-xl"
                 >
                   <div className="text-[11px] font-semibold text-slate-100">Dots</div>
                   <div className="mt-2 inline-flex w-full items-center rounded-2xl border border-white/10 bg-white/5 p-1 text-xs">
@@ -1212,8 +1212,8 @@ export default function Forensics() {
             >
               <defs>
                 <linearGradient id="scoreFill" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
+                  <stop offset="5%" stopColor="#10b981" stopOpacity={0.35} />
+                  <stop offset="95%" stopColor="#10b981" stopOpacity={0.02} />
                 </linearGradient>
               </defs>
               <CartesianGrid stroke="rgba(255,255,255,0.08)" strokeDasharray="4 4" />
@@ -1272,7 +1272,7 @@ export default function Forensics() {
                 type="monotone"
                 dataKey="threshold"
                 name="threshold"
-                stroke="#8b5cf6"
+                stroke="#34d399"
                 strokeWidth={2}
                 strokeDasharray="10 6"
                 dot={false}
@@ -1285,7 +1285,7 @@ export default function Forensics() {
                 type="monotone"
                 dataKey="mean"
                 name="mean"
-                stroke="rgba(59, 130, 246, 0.55)"
+                stroke="rgba(16, 185, 129, 0.55)"
                 strokeWidth={1.5}
                 strokeDasharray="6 4"
                 dot={false}
@@ -1298,7 +1298,7 @@ export default function Forensics() {
                 type="monotone"
                 dataKey="score"
                 name="score"
-                stroke="#3b82f6"
+                stroke="#10b981"
                 strokeWidth={2}
                 fill="url(#scoreFill)"
                 dot={false}
@@ -1511,9 +1511,9 @@ export default function Forensics() {
                       />
                       <Legend />
                       <Pie data={intelReport.pie} dataKey="value" nameKey="name" outerRadius={80}>
-                        <Cell fill="#3b82f6" />
-                        <Cell fill="#8b5cf6" />
-                        <Cell fill="#f87171" />
+                        <Cell fill="#10b981" />
+                        <Cell fill="#34d399" />
+                        <Cell fill="#6ee7b7" />
                       </Pie>
                     </PieChart>
                   </ResponsiveContainer>
@@ -1527,7 +1527,7 @@ export default function Forensics() {
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-2 text-xs text-slate-300">
                 <div className="glass rounded-xl border border-white/10 px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#3b82f6' }} />
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#10b981' }} />
                     <span className="font-semibold text-slate-200">Volumetric</span>
                   </div>
                   <div className="mt-1 text-slate-300">So much traffic hits at once that it clogs the internet pipe.</div>
@@ -1535,7 +1535,7 @@ export default function Forensics() {
 
                 <div className="glass rounded-xl border border-white/10 px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#8b5cf6' }} />
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#34d399' }} />
                     <span className="font-semibold text-slate-200">Protocol</span>
                   </div>
                   <div className="mt-1 text-slate-300">It tricks the basic “rules of the road” of networking to slow things down.</div>
@@ -1543,7 +1543,7 @@ export default function Forensics() {
 
                 <div className="glass rounded-xl border border-white/10 px-3 py-2">
                   <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#f87171' }} />
+                    <span className="h-2 w-2 rounded-full" style={{ backgroundColor: '#6ee7b7' }} />
                     <span className="font-semibold text-slate-200">Application</span>
                   </div>
                   <div className="mt-1 text-slate-300">It targets the website/app itself by repeatedly hitting pages or actions.</div>
@@ -1613,7 +1613,7 @@ export default function Forensics() {
                         }}
                         itemStyle={{ color: '#e2e8f0' }}
                       />
-                      <Bar dataKey="count" fill="#3b82f6" />
+                      <Bar dataKey="count" fill="#10b981" />
                     </BarChart>
                   </ResponsiveContainer>
                 )}

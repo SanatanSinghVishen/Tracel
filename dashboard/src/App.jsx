@@ -20,24 +20,24 @@ const clerkAppearance = {
     rootBox: 'w-full',
     card: 'w-full max-w-none glass-card shadow-none',
     headerTitle: 'text-white text-2xl sm:text-3xl font-semibold tracking-tight',
-    headerSubtitle: 'text-slate-400',
+    headerSubtitle: 'text-zinc-400',
     socialButtonsBlockButton:
-      'glass rounded-lg hover:bg-zinc-800 transition text-slate-100',
+      'glass rounded-lg hover:bg-zinc-800 transition text-zinc-100',
     formButtonPrimary:
       'btn-primary w-full font-semibold',
-    formFieldLabel: 'text-slate-300',
+    formFieldLabel: 'text-zinc-300',
     formFieldInput:
-      'glass rounded-lg text-slate-100 placeholder:text-slate-500 focus:ring-2 focus:ring-tracel-accent-blue/40 focus:border-zinc-700',
+      'glass rounded-lg text-zinc-100 placeholder:text-zinc-500 focus:ring-2 focus:ring-tracel-accent-blue/40 focus:border-zinc-700',
     otpCodeFieldInput:
-      'glass rounded-lg text-slate-100 placeholder:text-slate-500 focus:ring-2 focus:ring-tracel-accent-blue/40 focus:border-zinc-700',
+      'glass rounded-lg text-zinc-100 placeholder:text-zinc-500 focus:ring-2 focus:ring-tracel-accent-blue/40 focus:border-zinc-700',
     dividerLine: 'bg-zinc-800',
-    dividerText: 'text-slate-400',
-    footerActionText: 'text-slate-400',
-    footerActionLink: 'text-slate-200 hover:text-white',
-    formFieldAction: 'text-slate-300 hover:text-white',
-    alertText: 'text-slate-200',
-    identityPreviewText: 'text-slate-200',
-    identityPreviewEditButton: 'text-slate-200 hover:text-white',
+    dividerText: 'text-zinc-400',
+    footerActionText: 'text-zinc-400',
+    footerActionLink: 'text-zinc-200 hover:text-white',
+    formFieldAction: 'text-zinc-300 hover:text-white',
+    alertText: 'text-zinc-200',
+    identityPreviewText: 'text-zinc-200',
+    identityPreviewEditButton: 'text-zinc-200 hover:text-white',
   },
 };
 
@@ -64,7 +64,7 @@ function AppNavLink({ to, label, onNavigate }) {
           'outline-none focus-visible:ring-2 focus-visible:ring-tracel-accent-blue/40',
           isActive
             ? 'bg-zinc-950/70 text-white border-zinc-800'
-            : 'bg-zinc-950/40 text-slate-200 border-zinc-800 hover:bg-zinc-950/60',
+            : 'bg-zinc-950/40 text-zinc-200 border-zinc-800 hover:bg-zinc-950/60',
         ].join(' ')
       }
     >

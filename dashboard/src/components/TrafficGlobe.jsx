@@ -67,9 +67,9 @@ export default function TrafficGlobe() {
 
   const cyberColors = useMemo(
     () => ({
-      safe: '#3b82f6',
+      safe: '#22c55e',
       threat: '#f87171',
-      bg: '#020617',
+      bg: '#09090b',
     }),
     []
   );
@@ -416,7 +416,7 @@ export default function TrafficGlobe() {
         width={width || undefined}
         height={height || undefined}
         backgroundColor={cyberColors.bg}
-        globeImageUrl="https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg"
+        globeImageUrl="https://unpkg.com/three-globe/example/img/earth-night.jpg"
         bumpImageUrl="https://unpkg.com/three-globe/example/img/earth-topology.png"
         showAtmosphere={true}
         atmosphereColor={cyberColors.safe}

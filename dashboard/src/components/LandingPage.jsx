@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -15,7 +15,7 @@ import {
   Sparkles,
   Twitter,
 } from 'lucide-react';
-import { SignedOut, SignInButton, SignUpButton } from '@clerk/clerk-react';
+import { ClerkLoaded, ClerkLoading, SignedOut, SignInButton, SignUpButton } from '@clerk/clerk-react';
 
 const MotionDiv = motion.div;
 
@@ -30,7 +30,7 @@ function AnimatedBackdrop() {
 
       {/* Soft blooms */}
       <div className="absolute -left-28 -top-28 h-80 w-80 rounded-full blur-3xl bg-emerald-400/10" />
-      <div className="absolute -right-28 top-10 h-96 w-96 rounded-full blur-3xl bg-cyan-400/10" />
+      <div className="absolute -right-28 top-10 h-96 w-96 rounded-full blur-3xl bg-emerald-400/10" />
 
       <style>{`
         .tracel-grid{
@@ -76,7 +76,7 @@ function HeroVisual() {
       transition={{ duration: 0.65, ease: 'easeOut', delay: 0.2 }}
     >
       <div className="absolute inset-0 rounded-3xl border border-white/10 bg-white/5 backdrop-blur-md overflow-hidden">
-        <div className="absolute inset-0 opacity-[0.10] bg-[radial-gradient(circle_at_20%_20%,rgba(34,197,94,0.50),transparent_45%),radial-gradient(circle_at_85%_35%,rgba(34,211,238,0.42),transparent_50%)]" />
+        <div className="absolute inset-0 opacity-[0.10] bg-[radial-gradient(circle_at_20%_20%,rgba(34,197,94,0.50),transparent_45%),radial-gradient(circle_at_85%_35%,rgba(16,185,129,0.42),transparent_50%)]" />
         <div className="absolute inset-0 opacity-[0.08] bg-[linear-gradient(to_right,rgba(255,255,255,0.10)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.10)_1px,transparent_1px)] bg-[size:22px_22px]" />
 
         <MotionDiv
@@ -85,7 +85,7 @@ function HeroVisual() {
           transition={{ duration: 7.5, repeat: Infinity, ease: 'easeInOut' }}
         />
         <MotionDiv
-          className="absolute -right-14 bottom-0 h-72 w-72 rounded-full blur-2xl bg-cyan-400/15"
+          className="absolute -right-14 bottom-0 h-72 w-72 rounded-full blur-2xl bg-emerald-400/15"
           animate={{ x: [0, -18, 0], y: [0, -16, 0] }}
           transition={{ duration: 8.2, repeat: Infinity, ease: 'easeInOut' }}
         />
@@ -95,12 +95,12 @@ function HeroVisual() {
             <defs>
               <linearGradient id="tracelWire" x1="0" y1="0" x2="1" y2="1">
                 <stop offset="0%" stopColor="rgba(34,197,94,0.90)" />
-                <stop offset="55%" stopColor="rgba(34,211,238,0.55)" />
+                <stop offset="55%" stopColor="rgba(16,185,129,0.55)" />
                 <stop offset="100%" stopColor="rgba(255,255,255,0.18)" />
               </linearGradient>
               <radialGradient id="tracelCore" cx="50%" cy="45%" r="55%">
                 <stop offset="0%" stopColor="rgba(34,197,94,0.35)" />
-                <stop offset="55%" stopColor="rgba(34,211,238,0.14)" />
+                <stop offset="55%" stopColor="rgba(16,185,129,0.14)" />
                 <stop offset="100%" stopColor="rgba(0,0,0,0)" />
               </radialGradient>
             </defs>
@@ -139,10 +139,8 @@ function splitWords(text) {
 }
 
 function GlassFeatureTile({ icon: Icon, title, body, accent = 'green' }) {
-  const borderHover = accent === 'cyan' ? 'hover:border-cyan-400/50' : 'hover:border-emerald-400/50';
-  const overlay = accent === 'cyan'
-    ? 'from-cyan-400/20 via-transparent to-emerald-400/10'
-    : 'from-emerald-400/20 via-transparent to-cyan-400/10';
+  const borderHover = 'hover:border-emerald-400/50';
+  const overlay = 'from-emerald-400/20 via-transparent to-emerald-400/10';
 
   return (
     <motion.div
@@ -166,6 +164,133 @@ function GlassFeatureTile({ icon: Icon, title, body, accent = 'green' }) {
         </div>
       </div>
     </motion.div>
+  );
+}
+
+function useInkHover() {
+  const [hovered, setHovered] = useState(false);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+
+  const updatePos = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setPos({
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    });
+  };
+
+  return {
+    hovered,
+    pos,
+    handlers: {
+      onMouseEnter: (e) => {
+        updatePos(e);
+        setHovered(true);
+      },
+      onMouseMove: (e) => {
+        if (!hovered) return;
+        updatePos(e);
+      },
+      onMouseLeave: () => setHovered(false),
+    },
+  };
+}
+
+function HeaderPillLink({ to, children }) {
+  const ink = useInkHover();
+
+  return (
+    <Link
+      to={to}
+      {...ink.handlers}
+      className="group relative inline-flex items-center justify-center overflow-hidden rounded-full border border-white/10 bg-transparent px-4 py-2 text-sm font-semibold text-zinc-200 transition-colors duration-300 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
+    >
+      <span
+        aria-hidden="true"
+        className={[
+          'pointer-events-none absolute rounded-full bg-emerald-400',
+          'opacity-0 scale-0',
+          'transition-[transform,opacity] duration-700 ease-out',
+          ink.hovered ? 'opacity-100 scale-[22]' : '',
+        ].join(' ')}
+        style={{
+          width: 18,
+          height: 18,
+          left: ink.pos.x,
+          top: ink.pos.y,
+          transform: `translate(-50%, -50%) scale(${ink.hovered ? 22 : 0})`,
+        }}
+      />
+      <span className="relative z-10">{children}</span>
+    </Link>
+  );
+}
+
+function HeaderPillAction({ children, action }) {
+  const ink = useInkHover();
+
+  return (
+    <span className="inline-flex">
+      {action(
+        <button
+          type="button"
+          {...ink.handlers}
+          className="group relative inline-flex items-center justify-center overflow-hidden rounded-full border border-white/10 bg-transparent px-4 py-2 text-sm font-semibold text-zinc-200 transition-colors duration-300 hover:text-black focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/40"
+        >
+          <span
+            aria-hidden="true"
+            className={[
+              'pointer-events-none absolute rounded-full bg-emerald-400',
+              'opacity-0 scale-0',
+              'transition-[transform,opacity] duration-700 ease-out',
+              ink.hovered ? 'opacity-100 scale-[22]' : '',
+            ].join(' ')}
+            style={{
+              width: 18,
+              height: 18,
+              left: ink.pos.x,
+              top: ink.pos.y,
+              transform: `translate(-50%, -50%) scale(${ink.hovered ? 22 : 0})`,
+            }}
+          />
+          <span className="relative z-10">{children}</span>
+        </button>,
+      )}
+    </span>
+  );
+}
+
+function InkHighlightButton({ as: As = 'button', className = '', overlayClassName = '', children, ...rest }) {
+  const ink = useInkHover();
+
+  return (
+    <As
+      {...rest}
+      {...ink.handlers}
+      className={[
+        'group relative inline-flex items-center justify-center overflow-hidden',
+        className,
+      ].join(' ')}
+    >
+      <span
+        aria-hidden="true"
+        className={[
+          'pointer-events-none absolute rounded-full',
+          overlayClassName,
+          'opacity-0 scale-0',
+          'transition-[transform,opacity] duration-700 ease-out',
+          ink.hovered ? 'opacity-100 scale-[22]' : '',
+        ].join(' ')}
+        style={{
+          width: 18,
+          height: 18,
+          left: ink.pos.x,
+          top: ink.pos.y,
+          transform: `translate(-50%, -50%) scale(${ink.hovered ? 22 : 0})`,
+        }}
+      />
+      <span className="relative z-10">{children}</span>
+    </As>
   );
 }
 
@@ -214,7 +339,7 @@ export default function LandingPage() {
         icon: Cpu,
         title: 'AI Analysis',
         body: 'Isolation Forest scoring highlights anomalies in real time (lower score = more suspicious).',
-        accent: 'cyan',
+        accent: 'green',
       },
       {
         icon: Globe2,
@@ -232,29 +357,59 @@ export default function LandingPage() {
 
       {/* HERO (Full Viewport) */}
       <section className="relative min-h-[100svh] flex items-center">
-        <div className="mx-auto w-full max-w-screen-2xl px-4 sm:px-6 py-14 sm:py-16">
-          {/* Header */}
-          <div className="mb-10 flex items-center justify-between gap-4">
-            <div className="inline-flex items-center gap-3">
+        {/* Top Header */}
+        <header className="absolute left-0 right-0 top-0 z-20">
+          <div className="flex items-center justify-between gap-4 p-4 sm:p-6">
+            <Link to="/" className="inline-flex items-center gap-3">
               <div className="h-11 w-11 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md grid place-items-center">
                 <ShieldAlert className="h-6 w-6 text-white" />
               </div>
-              <div>
-                <div className="text-[18px] uppercase tracking-[0.28em] text-zinc-300">TRACEL</div>
-              </div>
-            </div>
-          </div>
+              <div className="text-[18px] uppercase tracking-[0.28em] text-zinc-300">TRACEL</div>
+            </Link>
 
+            <nav className="flex items-center gap-2">
+              <HeaderPillLink to="/about">About</HeaderPillLink>
+              <HeaderPillLink to="/contact">Contact us</HeaderPillLink>
+
+              <ClerkLoaded>
+                <SignedOut>
+                  <HeaderPillAction
+                    action={(child) => (
+                      <SignInButton mode="modal" forceRedirectUrl="/dashboard">
+                        {child}
+                      </SignInButton>
+                    )}
+                  >
+                    Log in
+                  </HeaderPillAction>
+                  <HeaderPillAction
+                    action={(child) => (
+                      <SignUpButton mode="modal" forceRedirectUrl="/dashboard">
+                        {child}
+                      </SignUpButton>
+                    )}
+                  >
+                    Sign up
+                  </HeaderPillAction>
+                </SignedOut>
+              </ClerkLoaded>
+
+              <ClerkLoading>
+                <div className="flex items-center gap-2">
+                  <div className="h-9 w-[84px] rounded-full border border-white/10 bg-white/5" />
+                  <div className="h-9 w-[92px] rounded-full border border-white/10 bg-white/5" />
+                </div>
+              </ClerkLoading>
+            </nav>
+          </div>
+        </header>
+
+        <div className="mx-auto w-full max-w-screen-2xl px-4 sm:px-6 pt-24 sm:pt-28 pb-14 sm:pb-16">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 items-center">
             <motion.div className="lg:col-span-7" variants={heroContainer} initial="hidden" animate="show">
-
               <motion.h1 className="mt-6 text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight leading-[1.04]">
                 {words.map((w, idx) => (
-                  <motion.span
-                    key={`${w}-${idx}`}
-                    variants={heroItem}
-                    className="inline-block mr-3"
-                  >
+                  <motion.span key={`${w}-${idx}`} variants={heroItem} className="inline-block mr-3">
                     {w}
                   </motion.span>
                 ))}
@@ -264,33 +419,24 @@ export default function LandingPage() {
                 Visualize. Detect. Secure. Real-time anomaly detection powered by Isolation Forest.
               </motion.p>
 
-              <motion.div variants={heroItem} className="mt-8 flex flex-col sm:flex-row sm:items-center gap-3">
+              <motion.div
+                className="mt-8 flex flex-col sm:flex-row sm:items-center gap-3"
+                initial={{ opacity: 0, y: 10, filter: 'blur(10px)' }}
+                animate={{ opacity: 1, y: 0, filter: 'blur(0px)' }}
+                transition={{ duration: 0.45, ease: 'easeOut', delay: 0.18 }}
+              >
                 <motion.div whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.98 }} transition={{ type: 'spring', stiffness: 260, damping: 18 }}>
-                  <Link
+                  <InkHighlightButton
+                    as={Link}
                     to="/dashboard"
-                    className="relative inline-flex items-center justify-center rounded-xl px-6 py-3.5 font-semibold bg-emerald-400 text-black border border-emerald-300/60"
+                    className="h-14 shrink-0 rounded-full px-7 font-semibold bg-emerald-400 text-black border border-emerald-300/60 whitespace-nowrap"
+                    overlayClassName="bg-emerald-200/35"
                   >
-                    <span aria-hidden="true" className="absolute inset-0 opacity-0 hover:opacity-100 transition-opacity duration-200" style={{ background: 'radial-gradient(800px circle at 30% 40%, rgba(34,211,238,0.25), transparent 45%)' }} />
-                    <span className="relative inline-flex items-center gap-2">
+                    <span className="inline-flex items-center gap-2">
                       Launch Simulator <ArrowRight className="h-4 w-4" />
                     </span>
-                  </Link>
+                  </InkHighlightButton>
                 </motion.div>
-
-                <SignedOut>
-                  <div className="flex flex-col sm:flex-row gap-3">
-                    <SignInButton mode="modal" forceRedirectUrl="/dashboard">
-                      <button className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md px-6 py-3.5 text-sm text-zinc-200 hover:text-white hover:border-emerald-400/30 transition">
-                        <LogIn className="h-4 w-4" /> Log in
-                      </button>
-                    </SignInButton>
-                    <SignUpButton mode="modal" forceRedirectUrl="/dashboard">
-                      <button className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 backdrop-blur-md px-6 py-3.5 text-sm text-zinc-200 hover:text-white hover:border-emerald-400/30 transition">
-                        Create account <ArrowRight className="h-4 w-4" />
-                      </button>
-                    </SignUpButton>
-                  </div>
-                </SignedOut>
               </motion.div>
             </motion.div>
 
@@ -371,7 +517,7 @@ export default function LandingPage() {
                     title: 'Streaming Pipeline',
                     body: 'Node.js broadcasts packets in real time over Socket.IO.',
                     icon: Globe2,
-                    accent: 'cyan',
+                    accent: 'green',
                     chips: ['Node.js', 'Socket.IO'],
                   },
                   {
@@ -387,14 +533,12 @@ export default function LandingPage() {
                     title: 'Forensics Dashboard',
                     body: 'Investigate origins, incidents, and KPIs with geo intel.',
                     icon: ShieldAlert,
-                    accent: 'cyan',
+                    accent: 'green',
                     chips: ['Forensics', 'MongoDB'],
                   },
                 ].map((s, idx) => {
-                  const borderHover = s.accent === 'cyan' ? 'hover:border-cyan-400/50' : 'hover:border-emerald-400/50';
-                  const overlay = s.accent === 'cyan'
-                    ? 'from-cyan-400/18 via-transparent to-emerald-400/10'
-                    : 'from-emerald-400/18 via-transparent to-cyan-400/10';
+                  const borderHover = 'hover:border-emerald-400/50';
+                  const overlay = 'from-emerald-400/18 via-transparent to-emerald-400/10';
                   const Icon = s.icon;
 
                   return (

@@ -695,8 +695,8 @@ export default function Dashboard() {
                   <AreaChart data={trafficData}>
                     <defs>
                       <linearGradient id="bytesFillSafe" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.26} />
-                        <stop offset="95%" stopColor="#8b5cf6" stopOpacity={0} />
+                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.26} />
+                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
                       </linearGradient>
                       <linearGradient id="bytesFillDanger" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="5%" stopColor="#ef4444" stopOpacity={0.28} />
@@ -705,7 +705,7 @@ export default function Dashboard() {
                     </defs>
                     <XAxis hide />
                     <YAxis
-                      stroke="rgba(148,163,184,0.45)"
+                      stroke="rgba(161,161,170,0.45)"
                       fontSize={12}
                       width={56}
                       tickFormatter={(val) => `${val} B`}
@@ -713,19 +713,19 @@ export default function Dashboard() {
                     />
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: 'rgba(2, 6, 23, 0.9)',
+                        backgroundColor: 'rgba(9, 9, 11, 0.9)',
                         border: '1px solid rgba(255,255,255,0.12)',
                         color: '#fff',
                         borderRadius: 14,
                         backdropFilter: 'blur(12px)',
                       }}
                       itemStyle={{ color: '#e2e8f0' }}
-                      labelStyle={{ color: '#94a3b8' }}
+                      labelStyle={{ color: '#a1a1aa' }}
                     />
                     <Area
                       type="monotone"
                       dataKey="bytes"
-                      stroke={attackActive ? '#ef4444' : '#3b82f6'}
+                      stroke={attackActive ? '#ef4444' : '#10b981'}
                       strokeWidth={2}
                       fill={attackActive ? 'url(#bytesFillDanger)' : 'url(#bytesFillSafe)'}
                       isAnimationActive={false}
