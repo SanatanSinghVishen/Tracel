@@ -622,7 +622,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          <div className="min-w-0 min-h-[360px] sm:min-h-[440px] md:flex-1 md:min-h-0">
+          <div className="min-w-0 min-h-[260px] sm:min-h-[320px] md:flex-1 md:min-h-0">
             {trafficView === 'globe' ? (
               <div className="h-full overflow-hidden rounded-lg">
                 <TrafficGlobe />
@@ -743,7 +743,7 @@ export default function Dashboard() {
             <h2 className="text-slate-400 mb-3 flex items-center gap-2 uppercase tracking-wider text-[10px]">
               <Terminal size={12} /> Live System Logs
             </h2>
-            <div className="max-h-[360px] sm:max-h-[440px] md:flex-1 md:max-h-none md:min-h-0 overflow-y-auto scroll-hidden space-y-2 pr-2">
+            <div className="flex-1 min-h-0 overflow-y-auto scroll-hidden space-y-2 pr-2">
               {logs.length === 0 ? (
                 <div className="space-y-2">
                   <div className="h-4 w-3/4 skeleton" />
