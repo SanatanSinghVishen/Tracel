@@ -17,6 +17,7 @@ const PROJECT_INFO = [
     'Core entities: packets (timestamped network events), anomalies/threats (is_anomaly=true), AI score (anomaly_score, lower = more suspicious), dynamic threshold telemetry.',
     'Key UX: Monitor dashboard (KPIs + charts + 3D globe), Forensics (incident log, timeline, AI score threshold chart), Settings (preferences; admin-only destructive ops), Contact/About.',
     'Security model: all data is scoped per owner_user_id; admin has additional controls (e.g., reset Mongo DB) when configured.',
+    'Developer: Sanatan Singh (BTech in Computer Science Engineering, IIIT Nagpur).',
 ].join(' ');
 
 const PLATFORM_KNOWLEDGE = [
@@ -2174,7 +2175,88 @@ app.post('/api/chat', async (req, res) => {
             ? entry.counters.packets
             : memoryStore.count(ownerUserId);
 
+        const sessionThreats = typeof entry?.counters?.threats === 'number'
+            ? entry.counters.threats
+            : null;
+
         const currentMode = attackModeByOwner.get(ownerUserId) ? 'Attack Mode' : 'Normal Mode';
+
+        const now = new Date();
+        const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+        function getUiStatsFromClientContext(ctx) {
+            try {
+                const stats = ctx?.ui?.stats;
+                if (!stats || typeof stats !== 'object') return { packets: null, threats: null };
+                return {
+                    packets: typeof stats.packets === 'number' ? stats.packets : null,
+                    threats: typeof stats.threats === 'number' ? stats.threats : null,
+                };
+            } catch {
+                return { packets: null, threats: null };
+            }
+        }
+
+        const uiStats = clientContext ? getUiStatsFromClientContext(clientContext) : { packets: null, threats: null };
+
+        // KPI counters (match dashboard logic):
+        // - totalPacketsAllTime: same as GET /api/packets/count (without sinceHours)
+        // - totalThreats24h: same as GET /api/threats/count?sinceHours=24
+        const kpiCounts = await (async () => {
+            // Prefer MongoDB when configured+connected. If Mongo is configured but still
+            // connecting, we avoid failing chat and will fall back to UI stats when available.
+            if (mongoUrl) {
+                await waitForMongoConnected(10_000);
+                if (isMongoConnected()) {
+                    const [totalPacketsAllTime, totalThreats24h] = await Promise.all([
+                        Packet.countDocuments({ owner_user_id: ownerUserId }),
+                        Packet.countDocuments({
+                            owner_user_id: ownerUserId,
+                            is_anomaly: true,
+                            timestamp: { $gte: since24h, $lt: now },
+                        }),
+                    ]);
+
+                    return {
+                        source: 'mongo',
+                        totalPacketsAllTime,
+                        totalThreats24h,
+                    };
+                }
+            }
+
+            // Memory fallback: use the same filtering as the lightweight count endpoints.
+            // Note: In memory mode, this reflects recent in-memory history, not full 24h.
+            const packetsAll = memoryQueryPackets({
+                limit: 50_000,
+                owner_user_id: ownerUserId,
+                is_anomaly: null,
+                source_ip: null,
+                since: null,
+            });
+
+            const threatsWindow = memoryQueryPackets({
+                limit: 50_000,
+                owner_user_id: ownerUserId,
+                is_anomaly: true,
+                source_ip: null,
+                since: since24h,
+            });
+
+            return {
+                source: 'memory',
+                totalPacketsAllTime: Array.isArray(packetsAll) ? packetsAll.length : 0,
+                totalThreats24h: (Array.isArray(threatsWindow) ? threatsWindow : []).filter((p) => p && p.is_anomaly).length,
+            };
+        })().catch(() => ({ source: 'unavailable', totalPacketsAllTime: null, totalThreats24h: null }));
+
+        const totalPacketsAllTime = (typeof kpiCounts.totalPacketsAllTime === 'number')
+            ? kpiCounts.totalPacketsAllTime
+            : (typeof uiStats.packets === 'number' ? uiStats.packets : null);
+
+        const totalThreats24hKpi = (typeof kpiCounts.totalThreats24h === 'number')
+            ? kpiCounts.totalThreats24h
+            : (typeof uiStats.threats === 'number' ? uiStats.threats : null);
 
         // Keep this consistent with the UI's /api/threat-intel behavior:
         // - If Mongo is configured+connected, use Mongo-backed computation.
@@ -2201,7 +2283,9 @@ app.post('/api/chat', async (req, res) => {
         })();
         const topIP = Array.isArray(intel?.topHostileIps) && intel.topHostileIps[0]?.ip ? intel.topHostileIps[0].ip : '—';
         const topCountry = Array.isArray(intel?.geoTopCountries) && intel.geoTopCountries[0]?.name ? intel.geoTopCountries[0].name : '—';
-        const threats24h = typeof intel?.totalThreats === 'number' ? intel.totalThreats : null;
+        // Threat-intel aggregates can be capped/sampled depending on source.
+        // Use KPI count (same as dashboard) as the authoritative 24h total for “dashboard stats”.
+        const threats24h = totalThreats24hKpi;
 
         const persistenceMode = isMongoConnected() ? 'mongo' : 'memory';
 
@@ -2217,7 +2301,16 @@ app.post('/api/chat', async (req, res) => {
             lines.push("Live status:");
             lines.push(`- Mode: ${currentMode}`);
             lines.push(`- Persistence: ${persistenceMode === 'mongo' ? 'MongoDB' : 'Memory'}`);
-            lines.push(`- Total packets (session): ${totalTrafficLabel}`);
+            if (totalPacketsAllTime != null) {
+                lines.push(`- Total packets (dashboard, all-time): ${Number(totalPacketsAllTime).toLocaleString('en-IN')}`);
+            } else {
+                lines.push(`- Total packets (dashboard, all-time): unavailable`);
+            }
+
+            lines.push(`- Packets (session stream): ${totalTrafficLabel}`);
+            if (sessionThreats != null) {
+                lines.push(`- Threats (session stream): ${Number(sessionThreats).toLocaleString('en-IN')}`);
+            }
 
             if (typeof threats24h === 'number') {
                 lines.push(`- Threats (last 24h): ${Number(threats24h).toLocaleString('en-IN')}`);
@@ -2374,6 +2467,8 @@ app.post('/api/chat', async (req, res) => {
         const asksForLiveStatus = /\b(live status|status|briefing|latest threat|latest attack|last attack|recent threats|top attacker|threats? in the last|24\s*h|24-?hour|last\s*24\s*hours?|24\s*hour\s*summary|24h\s*summary)\b/i.test(userMessage);
         const asksToSimulateAttack = /\b(simulate|simulation)\b.*\b(attack|threat)\b|\b(start|enable|turn on)\b.*\b(attack|attack mode)\b|\battack mode\b/i.test(userMessage);
 
+        const asksAboutDeveloper = /\b(who\s+(made|built|created|developed)|developer|creator|author)\b.*\b(tracel)\b|\bwho\s+is\s+the\s+developer\b/i.test(userMessage);
+
         const asksScoreMeaning = /\b(anomaly[_\s-]?score|ai score|score meaning|threshold|why.*(threat|safe)|how.*(threat|safe)|what.*(threshold|score))\b/i.test(userMessage);
         const asksNavigation = /\b(where|how)\b.*\b(monitor|forensics|settings|contact|about|dashboard|page)\b|\b(what pages|pages are there|navigation)\b/i.test(userMessage);
         const asksTroubleshooting = /\b(wrong|incorrect|not working|broken|bug|issue|empty|no data|not updating|offline|stuck|loading|doesn't load|cant see|cannot see)\b/i.test(userMessage);
@@ -2384,6 +2479,13 @@ app.post('/api/chat', async (req, res) => {
 
         if (asksForLiveStatus) {
             return res.json({ ok: true, text: formatLiveBriefingText() });
+        }
+
+        if (asksAboutDeveloper) {
+            return res.json({
+                ok: true,
+                text: 'Tracel was developed by Sanatan Singh (BTech in Computer Science Engineering, IIIT Nagpur).',
+            });
         }
 
         if (asksScoreMeaning) {
@@ -2413,8 +2515,10 @@ app.post('/api/chat', async (req, res) => {
     - Role: ${isAdmin ? 'Admin' : 'User'}
     - Mode: ${currentMode}
     - Persistence: ${persistenceMode}
-    - Total packets (session): ${totalTrafficLabel}
-    - Threats (last 24h): ${threats24h == null ? '—' : Number(threats24h).toLocaleString('en-IN')}
+    - Total packets (dashboard, all-time): ${totalPacketsAllTime == null ? '—' : Number(totalPacketsAllTime).toLocaleString('en-IN')}
+    - Threats (dashboard, last 24h): ${threats24h == null ? '—' : Number(threats24h).toLocaleString('en-IN')}
+    - Packets (session stream): ${totalTrafficLabel}
+    - Threats (session stream): ${sessionThreats == null ? '—' : Number(sessionThreats).toLocaleString('en-IN')}
     - Top attacker IP (24h): ${maskIp(topIP)}
     - Top country (24h): ${topCountry}
     - Last attack seen (24h): ${lastAttackLabel}
@@ -2426,8 +2530,8 @@ app.post('/api/chat', async (req, res) => {
     Instructions:
     - CRITICAL: Never invent or infer live metrics (packets, threats, attacker IPs, countries, timestamps).
     - CRITICAL: Never guess. If you cannot answer using SECTION 1-4, say "I can't verify that from the current Tracel context" and ask 1-2 clarifying questions.
-    - For any "last 24h" / "24h summary" / threat-intel questions: treat SECTION 3 as the single source of truth.
-    - SECTION 4 UI counters are session/UI indicators and may not match 24h totals; do not use them as 24h numbers.
+    - For dashboard KPIs (total packets, threats last 24h): treat SECTION 3 as the single source of truth.
+    - SECTION 4 (Client Context) is helpful for live UI state (connected, current packet, what page the user is on). It may lag slightly behind SECTION 3 and should not override SECTION 3 KPI totals.
     - If a value is missing or shown as "—"/"unavailable", say it is unavailable.
     - Be specific about Tracel features and where they are in the UI. Do not mention pages/features not listed in SECTION 1.
     - If the user asks "why" something is empty/broken, suggest the most likely Tracel-specific causes.
