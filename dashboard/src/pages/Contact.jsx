@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Mail } from 'lucide-react';
 import { useUser } from '@clerk/clerk-react';
 import { useSocket } from '../hooks/useSocket.js';
@@ -9,6 +9,11 @@ export default function Contact() {
   const { connection } = useSocket();
   const [form, setForm] = useState({ name: '', email: '', org: '', message: '' });
   const [status, setStatus] = useState({ state: 'idle', error: '' });
+  const [fieldErrors, setFieldErrors] = useState({ name: '', email: '', message: '' });
+
+  const nameRef = useRef(null);
+  const emailRef = useRef(null);
+  const messageRef = useRef(null);
 
   const serverUrl = useMemo(() => {
     const fromSocket = typeof connection?.serverUrl === 'string' ? connection.serverUrl : '';
@@ -18,6 +23,39 @@ export default function Contact() {
 
   function update(field, value) {
     setForm((f) => ({ ...f, [field]: value }));
+
+    // Clear inline validation as the user types.
+    if (field === 'name' || field === 'email' || field === 'message') {
+      setFieldErrors((prev) => ({ ...prev, [field]: '' }));
+    }
+  }
+
+  function validateRequired(nextForm) {
+    const name = String(nextForm?.name || '').trim();
+    const email = String(nextForm?.email || '').trim();
+    const message = String(nextForm?.message || '').trim();
+
+    const next = { name: '', email: '', message: '' };
+    if (!name) next.name = 'Name is required.';
+    if (!email) next.email = 'Email is required.';
+    if (!message) next.message = 'Message is required.';
+
+    setFieldErrors(next);
+
+    if (next.name) {
+      nameRef.current?.focus?.();
+      return false;
+    }
+    if (next.email) {
+      emailRef.current?.focus?.();
+      return false;
+    }
+    if (next.message) {
+      messageRef.current?.focus?.();
+      return false;
+    }
+
+    return true;
   }
 
   useEffect(() => {
@@ -49,7 +87,7 @@ export default function Contact() {
     const email = form.email.trim();
     const message = form.message.trim();
 
-    if (!name || !email || !message) {
+    if (!validateRequired(form)) {
       setStatus({ state: 'error', error: 'Please fill in Name, Email, and Message.' });
       return;
     }
@@ -79,6 +117,7 @@ export default function Contact() {
 
       setStatus({ state: 'success', error: '' });
       setForm({ name: '', email: '', org: '', message: '' });
+      setFieldErrors({ name: '', email: '', message: '' });
     } catch (err) {
       setStatus({ state: 'error', error: String(err) });
     }
@@ -107,22 +146,34 @@ export default function Contact() {
           <div>
             <label className="text-xs text-slate-400 uppercase tracking-wider">Name</label>
             <input
+              ref={nameRef}
               value={form.name}
               onChange={(e) => update('name', e.target.value)}
-              className="mt-2 w-full glass rounded-xl border border-white/10 px-4 py-3 text-sm text-slate-100 outline-none focus:ring-2 focus:ring-tracel-accent-blue/40"
+              required
+              aria-invalid={!!fieldErrors.name}
+              className={`mt-2 w-full glass rounded-xl border px-4 py-3 text-sm text-slate-100 outline-none focus:ring-2 focus:ring-tracel-accent-blue/40 ${
+                fieldErrors.name ? 'border-red-400/40' : 'border-white/10'
+              }`}
               placeholder="Your full name"
             />
+            {fieldErrors.name ? <div className="mt-1 text-xs text-red-300">{fieldErrors.name}</div> : null}
           </div>
 
           <div>
             <label className="text-xs text-slate-400 uppercase tracking-wider">Email</label>
             <input
+              ref={emailRef}
               value={form.email}
               onChange={(e) => update('email', e.target.value)}
               type="email"
-              className="mt-2 w-full glass rounded-xl border border-white/10 px-4 py-3 text-sm text-slate-100 outline-none focus:ring-2 focus:ring-tracel-accent-blue/40"
+              required
+              aria-invalid={!!fieldErrors.email}
+              className={`mt-2 w-full glass rounded-xl border px-4 py-3 text-sm text-slate-100 outline-none focus:ring-2 focus:ring-tracel-accent-blue/40 ${
+                fieldErrors.email ? 'border-red-400/40' : 'border-white/10'
+              }`}
               placeholder="you@company.com"
             />
+            {fieldErrors.email ? <div className="mt-1 text-xs text-red-300">{fieldErrors.email}</div> : null}
           </div>
 
           <div>
@@ -138,12 +189,18 @@ export default function Contact() {
           <div className="lg:col-span-2">
             <label className="text-xs text-slate-400 uppercase tracking-wider">Message</label>
             <textarea
+              ref={messageRef}
               value={form.message}
               onChange={(e) => update('message', e.target.value)}
               rows={4}
-              className="mt-2 w-full glass rounded-xl border border-white/10 px-4 py-3 text-sm text-slate-100 outline-none focus:ring-2 focus:ring-tracel-accent-blue/40"
+              required
+              aria-invalid={!!fieldErrors.message}
+              className={`mt-2 w-full glass rounded-xl border px-4 py-3 text-sm text-slate-100 outline-none focus:ring-2 focus:ring-tracel-accent-blue/40 ${
+                fieldErrors.message ? 'border-red-400/40' : 'border-white/10'
+              }`}
               placeholder="Your Message"
             />
+            {fieldErrors.message ? <div className="mt-1 text-xs text-red-300">{fieldErrors.message}</div> : null}
           </div>
 
           <div className="lg:col-span-2 flex items-center justify-between gap-3">
