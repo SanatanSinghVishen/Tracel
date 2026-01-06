@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Cpu, Shield, ShieldAlert, Terminal, Wifi, Zap } from 'lucide-react';
@@ -31,6 +31,7 @@ export default function Dashboard() {
 
   const countsRefreshTimerRef = useRef(null);
   const lastCountsRefreshMsRef = useRef(0);
+  const countsRequestIdRef = useRef(0);
 
   // Stabilize KPIs across refresh: keep last known totals per identity.
   const identityKey = useMemo(() => {
@@ -40,14 +41,67 @@ export default function Dashboard() {
 
   const packetsTotalStorageKey = useMemo(() => `tracel_kpi_total_packets_${identityKey}`, [identityKey]);
 
-  const persistPacketsTotal = (value) => {
-    if (!Number.isFinite(value) || value < 0) return;
+  const persistPacketsTotal = useCallback(
+    (value) => {
+      if (!Number.isFinite(value) || value < 0) return;
+      try {
+        window.localStorage.setItem(packetsTotalStorageKey, String(Math.floor(value)));
+      } catch {
+        // ignore
+      }
+    },
+    [packetsTotalStorageKey]
+  );
+
+  const refreshMongoCounts = useCallback(async () => {
+    const requestId = (countsRequestIdRef.current += 1);
+
     try {
-      window.localStorage.setItem(packetsTotalStorageKey, String(Math.floor(value)));
+      const base = connection.serverUrl || 'http://localhost:3000';
+      const threatsUrl = new URL('/api/threats/count', base);
+      threatsUrl.searchParams.set('sinceHours', '24');
+      threatsUrl.searchParams.set('_', String(Date.now()));
+
+      const packetsUrl = new URL('/api/packets/count', base);
+      packetsUrl.searchParams.set('_', String(Date.now()));
+
+      async function fetchWithRetry(url, options) {
+        const attempts = 3;
+        for (let i = 0; i < attempts; i += 1) {
+          const res = await fetch(url, options);
+          if (res.status !== 503 || i === attempts - 1) return res;
+          await new Promise((r) => setTimeout(r, 400 * (i + 1)));
+        }
+        return fetch(url, options);
+      }
+
+      const headers = await buildAuthHeaders(isLoaded ? getToken : null, anonId);
+      const [threatsRes, packetsRes] = await Promise.all([
+        fetchWithRetry(threatsUrl.toString(), { headers, credentials: 'include', cache: 'no-store' }),
+        fetchWithRetry(packetsUrl.toString(), { headers, credentials: 'include', cache: 'no-store' }),
+      ]);
+
+      const threatsBody = await threatsRes.json().catch(() => ({}));
+      const packetsBody = await packetsRes.json().catch(() => ({}));
+
+      // Ignore stale responses (e.g. load-time fetch finishing after a newer refresh).
+      if (requestId !== countsRequestIdRef.current) return;
+
+      const nextPacketsTotal = typeof packetsBody?.totalPackets === 'number' ? packetsBody.totalPackets : null;
+      const nextThreats24h = typeof threatsBody?.totalThreats === 'number' ? threatsBody.totalThreats : null;
+
+      if (nextPacketsTotal != null) persistPacketsTotal(nextPacketsTotal);
+
+      setStats((s) => {
+        const packets = nextPacketsTotal ?? s.packets;
+        const threats = nextThreats24h ?? s.threats;
+        if (s.packets === packets && s.threats === threats) return s;
+        return { ...s, packets, threats };
+      });
     } catch {
       // ignore
     }
-  };
+  }, [connection.serverUrl, isLoaded, getToken, anonId, persistPacketsTotal]);
 
   useEffect(() => {
     try {
@@ -136,32 +190,10 @@ export default function Dashboard() {
         // Ensure refresh always pulls the latest snapshot (avoid disk cache).
         u.searchParams.set('_', String(Date.now()));
 
-        const threatsCountUrl = new URL('/api/threats/count', base);
-        threatsCountUrl.searchParams.set('sinceHours', '24');
-
-        const packetsCountUrl = new URL('/api/packets/count', base);
-        // Total Packets KPI is all-time total.
-
-        async function fetchWithRetry(url, options) {
-          const attempts = 3;
-          for (let i = 0; i < attempts; i += 1) {
-            const res = await fetch(url, options);
-            if (res.status !== 503 || i === attempts - 1) return res;
-            await new Promise((r) => setTimeout(r, 400 * (i + 1)));
-          }
-          return fetch(url, options);
-        }
-
         const headers = await buildAuthHeaders(isLoaded ? getToken : null, anonId);
-        const [res, threatsRes, packetsRes] = await Promise.all([
-          fetch(u.toString(), { headers, credentials: 'include', cache: 'no-store' }),
-          fetchWithRetry(threatsCountUrl.toString(), { headers, credentials: 'include', cache: 'no-store' }),
-          fetchWithRetry(packetsCountUrl.toString(), { headers, credentials: 'include', cache: 'no-store' }),
-        ]);
 
+        const res = await fetch(u.toString(), { headers, credentials: 'include', cache: 'no-store' });
         const data = await res.json().catch(() => ({}));
-        const threatsData = await threatsRes.json().catch(() => ({}));
-        const packetsCountData = await packetsRes.json().catch(() => ({}));
         if (!res.ok) return;
 
         const packets = Array.isArray(data.packets) ? data.packets : [];
@@ -174,25 +206,16 @@ export default function Dashboard() {
         setTrafficData(last60);
         setCurrentPacket(packets[0] || null);
 
-        const apiPacketsTotal = typeof packetsCountData?.totalPackets === 'number' ? packetsCountData.totalPackets : null;
-        const mongoThreats24h = typeof threatsData?.totalThreats === 'number' ? threatsData.totalThreats : null;
-
         const sessionStartedAt = typeof data?.session?.startedAt === 'string' ? data.session.startedAt : null;
         if (sessionStartedAt) {
           const parsed = Date.parse(sessionStartedAt);
           if (Number.isFinite(parsed) && parsed > 0) setUptimeStartMs(parsed);
         }
 
-        const threatsFromPackets = packets.reduce((acc, p) => acc + (p?.is_anomaly ? 1 : 0), 0);
 
-        if (apiPacketsTotal != null) persistPacketsTotal(apiPacketsTotal);
-        setStats((s) => ({
-          ...s,
-          // Never fall back to the limited recent-sample length; that causes refresh-to-refresh drift.
-          packets: apiPacketsTotal ?? s.packets,
-          // Threats KPI should be Mongo-backed for correctness.
-          threats: mongoThreats24h ?? threatsFromPackets,
-        }));
+        // KPIs (total packets + threats) should come from Mongo count endpoints only.
+        // This avoids races between different sources and keeps Dashboard aligned with Forensics' stored view.
+        refreshMongoCounts();
 
         setLogs(() => {
           const lines = [];
@@ -211,7 +234,7 @@ export default function Dashboard() {
     return () => {
       cancelled = true;
     };
-  }, [connection.serverUrl, isLoaded, getToken, anonId]);
+  }, [connection.serverUrl, isLoaded, getToken, anonId, refreshMongoCounts]);
 
   // Cleanup any pending counts refresh timer.
   useEffect(() => {
@@ -275,56 +298,15 @@ export default function Dashboard() {
         }
       }
 
-      setStats((prev) => {
-        // Packets + threats counts come from Mongo. Do not increment locally.
-        const nextPackets = prev.packets;
-        const nextThreats = prev.threats;
-
-        return {
-          ...prev,
-          packets: nextPackets,
-          threats: nextThreats,
-        };
-      });
-
-      // Refresh counts from Mongo (debounced). This keeps KPIs correct without relying on
-      // in-memory increments and prevents drift across refreshes.
+      // Refresh counts from Mongo (debounced + throttled). This keeps KPIs correct without relying on
+      // in-memory increments and avoids excessive API calls during high packet rates.
       const now = Date.now();
-      if (now - lastCountsRefreshMsRef.current >= 2000 && !countsRefreshTimerRef.current) {
+      if (now - lastCountsRefreshMsRef.current >= 5000 && !countsRefreshTimerRef.current) {
         countsRefreshTimerRef.current = window.setTimeout(async () => {
           countsRefreshTimerRef.current = null;
           lastCountsRefreshMsRef.current = Date.now();
 
-          try {
-            const base = connection.serverUrl || 'http://localhost:3000';
-            const threatsUrl = new URL('/api/threats/count', base);
-            threatsUrl.searchParams.set('sinceHours', '24');
-            threatsUrl.searchParams.set('_', String(Date.now()));
-
-            const packetsUrl = new URL('/api/packets/count', base);
-            packetsUrl.searchParams.set('_', String(Date.now()));
-
-            const headers = await buildAuthHeaders(isLoaded ? getToken : null, anonId);
-
-            const [threatsRes, packetsRes] = await Promise.all([
-              fetch(threatsUrl.toString(), { headers, credentials: 'include', cache: 'no-store' }),
-              fetch(packetsUrl.toString(), { headers, credentials: 'include', cache: 'no-store' }),
-            ]);
-
-            const threatsBody = await threatsRes.json().catch(() => ({}));
-            const packetsBody = await packetsRes.json().catch(() => ({}));
-
-            const nextPacketsTotal = typeof packetsBody?.totalPackets === 'number' ? packetsBody.totalPackets : null;
-            if (nextPacketsTotal != null) persistPacketsTotal(nextPacketsTotal);
-
-            setStats((s) => ({
-              ...s,
-              packets: nextPacketsTotal ?? s.packets,
-              threats: typeof threatsBody?.totalThreats === 'number' ? threatsBody.totalThreats : s.threats,
-            }));
-          } catch {
-            // ignore
-          }
+          await refreshMongoCounts();
         }, 650);
       }
       setTrafficData((prev) => [...prev, data].slice(-60));
@@ -340,7 +322,7 @@ export default function Dashboard() {
     return () => {
       socket.off('packet', onPacket);
     };
-  }, [socket]);
+  }, [socket, refreshMongoCounts]);
 
   const toggleAttack = (active) => socket.emit('toggle_attack', active);
 
