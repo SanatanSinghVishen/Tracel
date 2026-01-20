@@ -371,6 +371,9 @@ export default function Dashboard() {
                 {cyberFacts[bootFactIndex % cyberFacts.length]}
               </div>
             </div>
+            <div className="mt-5">
+            < div className="text-[10px] uppercase tracking-[0.22em] text-slate-400">Try Refreshing ! If it takes time</div>
+            </div>
 
             <style>{`
               .tracel-bootbar{ animation: tracelBootSweep 1.35s ease-in-out infinite; }
