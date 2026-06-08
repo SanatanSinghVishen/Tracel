@@ -4,11 +4,35 @@ import time
 import pytest
 from inference import predict, reload_model, _model_lock
 
+from sklearn.ensemble import IsolationForest
+import pandas as pd
+import joblib
+
 @pytest.fixture(autouse=True)
-def ensure_model():
+def ensure_model(tmp_path):
+    # Create a dummy model file so predict() doesn't fail with RuntimeError
+    model_dir = tmp_path / "model"
+    model_dir.mkdir(parents=True, exist_ok=True)
+    model_path = model_dir / "model.pkl"
+    
+    clf = IsolationForest(n_estimators=10, random_state=42)
+    # Train on dummy data matching the feature shape
+    dummy_data = pd.DataFrame([{'bytes': 100, 'protocol_index': 1, 'entropy': 0.1, 'dst_port': 80}] * 100)
+    import inference
+    X_train = inference._build_features(dummy_data)
+    clf.fit(X_train)
+    joblib.dump(clf, model_path)
+    
+    # Temporarily override MODEL_PATH in inference.py
+    import inference
+    orig_path = inference.MODEL_PATH
+    inference.MODEL_PATH = model_path
+    
     # Force load once before tests
     reload_model()
     yield
+    
+    inference.MODEL_PATH = orig_path
 
 def test_predict_output_keys():
     data = {
