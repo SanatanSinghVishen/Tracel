@@ -44,7 +44,7 @@ const buildCorsOptions = () => {
             return callback(new CorsForbiddenError(`Origin ${origin} not allowed by CORS`));
         },
         methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-        allowedHeaders: ['Content-Type', 'Authorization'],
+        allowedHeaders: ['Content-Type', 'Authorization', 'x-tracel-anon-id'],
         credentials: true
     };
 };
