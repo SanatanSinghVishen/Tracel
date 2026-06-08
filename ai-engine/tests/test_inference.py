@@ -118,21 +118,23 @@ def test_predict_shap_explanation():
     # A packet likely to be normal
     normal_data = {'bytes': 100, 'protocol': 'TCP', 'dst_port': 80}
     result = predict(normal_data)
-    if not result['is_anomaly']:
-        assert result.get('explanation') is None
+    
+    assert 'explanation' in result
+    assert 'mitre' in result
 
     # A packet likely to be anomalous
     anomaly_data = {'bytes': 9999999, 'protocol': 'TCP', 'dst_port': 4444, 'entropy': 0.99}
     result = predict(anomaly_data)
-    if result['is_anomaly']:
-        assert 'explanation' in result
-        # Either None (if SHAP failed/not init) or a list of dicts
-        if result['explanation'] is not None:
-            assert isinstance(result['explanation'], list)
-            for item in result['explanation']:
-                assert 'feature' in item
-                assert 'shap_value' in item
-                assert 'actual_value' in item
+    assert 'explanation' in result
+    assert 'mitre' in result
+    
+    # Either None (if SHAP failed/not init) or a list of dicts
+    if result['explanation'] is not None:
+        assert isinstance(result['explanation'], list)
+        for item in result['explanation']:
+            assert 'feature' in item
+            assert 'shap_value' in item
+            assert 'actual_value' in item
 
 def test_predict_shap_failure_graceful(monkeypatch):
     import inference
@@ -144,6 +146,6 @@ def test_predict_shap_failure_graceful(monkeypatch):
         
     anomaly_data = {'bytes': 9999999, 'protocol': 'TCP', 'dst_port': 4444}
     result = predict(anomaly_data)
-    if result['is_anomaly']:
-        assert result.get('explanation') is None
+    assert result.get('explanation') is None
+    assert result.get('mitre') is None
 
