@@ -100,10 +100,17 @@ def run_retrain_job(since_hours: int = 24):
     if not _retrain_lock.acquire(blocking=False):
         logger.warning("Retrain job already running, skipping.")
         return False, "Already running"
-        
+
+    # Read min_samples from env so it can be tuned via Railway variables.
+    # Default to 10 so we can always bootstrap a first model even on a fresh DB.
     try:
-        logger.info(f"Starting model retraining (since_hours={since_hours})...")
-        df = fetch_training_data(since_hours=since_hours, min_samples=500)
+        min_samples = int(os.getenv("RETRAIN_MIN_SAMPLES", "10"))
+    except ValueError:
+        min_samples = 10
+    
+    try:
+        logger.info(f"Starting model retraining (since_hours={since_hours}, min_samples={min_samples})...")
+        df = fetch_training_data(since_hours=since_hours, min_samples=min_samples)
         
         clf = process_and_train(df)
         
