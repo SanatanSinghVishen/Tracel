@@ -11,7 +11,7 @@
 
 Tracel simulates network packet traffic, scores each packet in real time using a trained Isolation Forest model, and streams the results — with SHAP feature explanations and MITRE ATT&CK technique tags — to a live React dashboard.
 
-[Live Demo](https://tracel.vercel.app) · [Architecture](#architecture) · [Quick Start](#quick-start) · [API Reference](#api-reference)
+[Live Demo](https://tracel-frontend.vercel.app) · [Architecture](#architecture) · [Quick Start](#quick-start) · [API Reference](#api-reference)
 
 </div>
 
