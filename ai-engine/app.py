@@ -4,6 +4,7 @@ from pathlib import Path
 import os
 import time
 import threading
+from datetime import datetime
 
 from dotenv import load_dotenv, dotenv_values
 from inference import predict, reload_model
