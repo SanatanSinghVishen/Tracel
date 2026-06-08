@@ -1303,7 +1303,7 @@ export default function Forensics() {
               </div>
             </div>
           ) : (
-          <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={256}>
             <ComposedChart
               data={scoreSeries}
               margin={{ top: 8, right: 12, bottom: 0, left: 12 }}
