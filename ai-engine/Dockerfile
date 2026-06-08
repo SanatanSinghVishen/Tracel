@@ -39,7 +39,6 @@ RUN mkdir -p /app/model && chown -R tracel:tracel /app/model
 
 # Copy application source code
 COPY inference.py app.py worker.py retrain.py mitre_tagger.py mitre_techniques.py gunicorn.conf.py ./
-COPY model.pkl ./model/model.pkl
 RUN chown -R tracel:tracel /app/model
 
 USER tracel
