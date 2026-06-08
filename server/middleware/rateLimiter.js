@@ -1,13 +1,13 @@
-const rateLimit = require('express-rate-limit');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 
 const windowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10);
 const maxHttp = parseInt(process.env.RATE_LIMIT_MAX_HTTP || '200', 10);
 const maxAdmin = parseInt(process.env.RATE_LIMIT_MAX_ADMIN || '20', 10);
 
-const keyGenerator = (req) => {
+const keyGenerator = (req, res) => {
     // Attempt to extract authenticated user id from clerk/jwks
     const userId = req.user?.sub || req.user?.id || req.auth?.userId || '';
-    const ip = req.headers['x-forwarded-for'] || req.connection?.remoteAddress || req.ip || 'unknown';
+    const ip = ipKeyGenerator(req, res) || req.headers['x-forwarded-for'] || req.connection?.remoteAddress || 'unknown';
     return userId ? `${ip}_${userId}` : ip;
 };
 
