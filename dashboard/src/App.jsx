@@ -15,6 +15,7 @@ import { SocketProvider } from './context/SocketContext.jsx';
 import { disableSmoothScroll, enableSmoothScroll } from './lib/scroller.js';
 import ChatAssistant from './components/ChatAssistant.jsx';
 import { readAccentTheme } from './utils/prefs.js';
+import ConnectionStatusBanner from './components/ConnectionStatusBanner.jsx';
 
 const clerkAppearance = {
   elements: {
@@ -124,9 +125,10 @@ function AppShell() {
             isTouchDevice
               ? 'min-h-[100svh] overflow-x-hidden'
               : 'h-[100svh] min-h-[100svh] overflow-hidden'
-          ) + ` font-sans bg-zinc-950 text-white theme-accent-${accentTheme}`
+          ) + ` font-sans bg-zinc-950 text-white theme-accent-${accentTheme} flex flex-col`
         }
       >
+        <ConnectionStatusBanner />
         <div className="hidden theme-accent-emerald theme-accent-blue theme-accent-purple" />
         <div className={(isTouchDevice ? 'min-h-[100svh]' : 'h-full') + ' min-w-0 flex flex-col md:flex-row'}>
           {/* Desktop sidebar */}

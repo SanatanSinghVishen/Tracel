@@ -2,12 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useAuth } from '@clerk/clerk-react';
 import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Cpu, Shield, ShieldAlert, Terminal, Wifi, Zap } from 'lucide-react';
-import { useSocket } from '../hooks/useSocket.js';
+import FreshnessGuard from '../components/FreshnessGuard.jsx';
 import TrafficGlobe from '../components/TrafficGlobe.jsx';
 import ChatAssistant from '../components/ChatAssistant.jsx';
 import { readDefaultTrafficView, writeDefaultTrafficView } from '../utils/prefs.js';
 import { buildAuthHeaders, getOrCreateAnonId } from '../lib/authClient.js';
 import { cyberFacts } from '../utils/cyberFacts.js';
+import { useSocket } from '../hooks/useSocket.js';
 
 function formatUptime(seconds) {
   const hours = Math.floor(seconds / 3600);
@@ -385,410 +386,413 @@ export default function Dashboard() {
             `}</style>
           </div>
         </div>
-      ) : null}
-      <ChatAssistant
-        connection={connection}
-        stats={stats}
-        currentPacket={currentPacket}
-        trafficView={trafficView}
-      />
-      {/* Header */}
-      <div className="glass-card glow-hover p-5 sm:p-6 shrink-0">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <div className="flex items-center justify-between gap-3">
-              <h1 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">
-                Monitor
-                <span className="ml-3 text-slate-400 font-normal">/ Tracel</span>
-              </h1>
+      ) : (
+      <FreshnessGuard>
+        <ChatAssistant
+          connection={connection}
+          stats={stats}
+          currentPacket={currentPacket}
+          trafficView={trafficView}
+        />
+        {/* Header */}
+        <div className="glass-card glow-hover p-5 sm:p-6 shrink-0">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="flex items-center justify-between gap-3">
+                <h1 className="text-2xl sm:text-3xl font-semibold text-white tracking-tight">
+                  Monitor
+                  <span className="ml-3 text-slate-400 font-normal">/ Tracel</span>
+                </h1>
 
-              <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-[11px] text-slate-200">
+                <div className="hidden sm:inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-[11px] text-slate-200">
+                  <span className={connection.connected ? 'pulse-dot' : 'pulse-dot pulse-dot--off'} />
+                  <span className={connection.connected ? 'text-slate-200' : 'text-red-200'}>
+                    {connection.connected ? 'Online' : 'Offline'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="sm:hidden mt-3 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-[11px] text-slate-200">
                 <span className={connection.connected ? 'pulse-dot' : 'pulse-dot pulse-dot--off'} />
+                <span className="text-slate-400">Connection</span>
                 <span className={connection.connected ? 'text-slate-200' : 'text-red-200'}>
                   {connection.connected ? 'Online' : 'Offline'}
                 </span>
               </div>
             </div>
 
-            <div className="sm:hidden mt-3 inline-flex items-center gap-2 rounded-full border border-zinc-800 bg-zinc-950/60 px-3 py-1 text-[11px] text-slate-200">
-              <span className={connection.connected ? 'pulse-dot' : 'pulse-dot pulse-dot--off'} />
-              <span className="text-slate-400">Connection</span>
-              <span className={connection.connected ? 'text-slate-200' : 'text-red-200'}>
-                {connection.connected ? 'Online' : 'Offline'}
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
-            <div className="hidden sm:block text-right">
-              <p className="text-xs text-slate-400 uppercase tracking-wider">Uptime</p>
-              <p className="data-mono text-xl text-white">{formatUptime(stats.uptime)}</p>
-            </div>
-
-            <div className="w-full sm:w-auto">
-              {/* Mobile: stacked, larger touch targets */}
-              <div className="sm:hidden grid grid-cols-1 gap-2" role="group" aria-label="Attack simulation toggle">
-                <button
-                  type="button"
-                  aria-pressed={!attackSimEnabled}
-                  onClick={() => {
-                    if (!attackSimEnabled) return;
-                    setAttackSimEnabled(false);
-                    toggleAttack(false);
-                  }}
-                  className={
-                    `h-12 w-full flex items-center justify-center gap-2 rounded-xl border border-zinc-800 ` +
-                    `text-sm font-semibold transition-all ` +
-                    `outline-none focus-visible:ring-2 focus-visible:ring-tracel-accent-blue/40 ` +
-                    (!attackSimEnabled
-                      ? 'text-tracel-accent-blue bg-tracel-accent-blue/15 border-tracel-accent-blue/30'
-                      : 'text-slate-300 bg-zinc-950/60 hover:text-white')
-                  }
-                >
-                  <Shield size={16} className={!attackSimEnabled ? 'text-tracel-accent-blue' : 'text-slate-200'} />
-                  Defense
-                </button>
-
-                <button
-                  type="button"
-                  aria-pressed={attackSimEnabled}
-                  onClick={() => {
-                    if (attackSimEnabled) return;
-                    setAttackSimEnabled(true);
-                    toggleAttack(true);
-                  }}
-                  className={
-                    `h-12 w-full flex items-center justify-center gap-2 rounded-xl border border-zinc-800 ` +
-                    `bg-zinc-950/60 text-sm font-semibold transition-all ` +
-                    `outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 ` +
-                    (attackSimEnabled ? 'text-white' : 'text-slate-300 hover:text-white')
-                  }
-                >
-                  <Zap size={16} className={attackSimEnabled ? 'text-white' : 'text-slate-200'} />
-                  Attack
-                </button>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-4">
+              <div className="hidden sm:block text-right">
+                <p className="text-xs text-slate-400 uppercase tracking-wider">Uptime</p>
+                <p className="data-mono text-xl text-white">{formatUptime(stats.uptime)}</p>
               </div>
 
-              {/* Desktop/tablet: compact segmented control */}
-              <div className="hidden sm:flex items-center justify-between sm:justify-start gap-3">
-                <div
-                  className="relative w-full sm:w-[320px] rounded-lg border border-zinc-800 bg-zinc-900 p-1"
-                  role="group"
-                  aria-label="Attack simulation toggle"
-                >
-                  <div
+              <div className="w-full sm:w-auto">
+                {/* Mobile: stacked, larger touch targets */}
+                <div className="sm:hidden grid grid-cols-1 gap-2" role="group" aria-label="Attack simulation toggle">
+                  <button
+                    type="button"
+                    aria-pressed={!attackSimEnabled}
+                    onClick={() => {
+                      if (!attackSimEnabled) return;
+                      setAttackSimEnabled(false);
+                      toggleAttack(false);
+                    }}
                     className={
-                      `absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] rounded-md border border-zinc-800 ` +
-                      `transition-transform duration-200 ease-out ` +
-                      (attackSimEnabled
-                        ? 'translate-x-full bg-red-500/15'
-                        : 'translate-x-0 bg-tracel-accent-blue/15 border-tracel-accent-blue/30')
+                      `h-12 w-full flex items-center justify-center gap-2 rounded-xl border border-zinc-800 ` +
+                      `text-sm font-semibold transition-all ` +
+                      `outline-none focus-visible:ring-2 focus-visible:ring-tracel-accent-blue/40 ` +
+                      (!attackSimEnabled
+                        ? 'text-tracel-accent-blue bg-tracel-accent-blue/15 border-tracel-accent-blue/30'
+                        : 'text-slate-300 bg-zinc-950/60 hover:text-white')
                     }
-                    aria-hidden="true"
-                  />
+                  >
+                    <Shield size={16} className={!attackSimEnabled ? 'text-tracel-accent-blue' : 'text-slate-200'} />
+                    Defense
+                  </button>
 
-                  <div className="relative grid grid-cols-2">
-                    <button
-                      type="button"
-                      aria-pressed={!attackSimEnabled}
-                      onClick={() => {
-                        if (!attackSimEnabled) return;
-                        setAttackSimEnabled(false);
-                        toggleAttack(false);
-                      }}
-                      className={
-                        `flex items-center justify-center gap-2 px-4 py-2 rounded-md text-xs font-semibold ` +
-                        `transition-all outline-none focus-visible:ring-2 focus-visible:ring-tracel-accent-blue/40 ` +
-                        (!attackSimEnabled ? 'text-tracel-accent-blue' : 'text-slate-300 hover:text-white')
-                      }
-                      title="Defense mode"
-                    >
-                      <Shield size={14} className={!attackSimEnabled ? 'text-tracel-accent-blue' : 'text-slate-200'} />
-                      Defense
-                    </button>
+                  <button
+                    type="button"
+                    aria-pressed={attackSimEnabled}
+                    onClick={() => {
+                      if (attackSimEnabled) return;
+                      setAttackSimEnabled(true);
+                      toggleAttack(true);
+                    }}
+                    className={
+                      `h-12 w-full flex items-center justify-center gap-2 rounded-xl border border-zinc-800 ` +
+                      `bg-zinc-950/60 text-sm font-semibold transition-all ` +
+                      `outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 ` +
+                      (attackSimEnabled ? 'text-white' : 'text-slate-300 hover:text-white')
+                    }
+                  >
+                    <Zap size={16} className={attackSimEnabled ? 'text-white' : 'text-slate-200'} />
+                    Attack
+                  </button>
+                </div>
 
-                    <button
-                      type="button"
-                      aria-pressed={attackSimEnabled}
-                      onClick={() => {
-                        if (attackSimEnabled) return;
-                        setAttackSimEnabled(true);
-                        toggleAttack(true);
-                      }}
+                {/* Desktop/tablet: compact segmented control */}
+                <div className="hidden sm:flex items-center justify-between sm:justify-start gap-3">
+                  <div
+                    className="relative w-full sm:w-[320px] rounded-lg border border-zinc-800 bg-zinc-900 p-1"
+                    role="group"
+                    aria-label="Attack simulation toggle"
+                  >
+                    <div
                       className={
-                        `flex items-center justify-center gap-2 px-4 py-2 rounded-md text-xs font-semibold ` +
-                        `transition-all outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 ` +
-                        (attackSimEnabled ? 'text-white' : 'text-slate-300 hover:text-white')
+                        `absolute top-1 bottom-1 left-1 w-[calc(50%-4px)] rounded-md border border-zinc-800 ` +
+                        `transition-transform duration-200 ease-out ` +
+                        (attackSimEnabled
+                          ? 'translate-x-full bg-red-500/15'
+                          : 'translate-x-0 bg-tracel-accent-blue/15 border-tracel-accent-blue/30')
                       }
-                      title="Simulate attack"
-                    >
-                      <Zap size={14} className={attackSimEnabled ? 'text-white' : 'text-slate-200'} />
-                      Attack
-                    </button>
+                      aria-hidden="true"
+                    />
+
+                    <div className="relative grid grid-cols-2">
+                      <button
+                        type="button"
+                        aria-pressed={!attackSimEnabled}
+                        onClick={() => {
+                          if (!attackSimEnabled) return;
+                          setAttackSimEnabled(false);
+                          toggleAttack(false);
+                        }}
+                        className={
+                          `flex items-center justify-center gap-2 px-4 py-2 rounded-md text-xs font-semibold ` +
+                          `transition-all outline-none focus-visible:ring-2 focus-visible:ring-tracel-accent-blue/40 ` +
+                          (!attackSimEnabled ? 'text-tracel-accent-blue' : 'text-slate-300 hover:text-white')
+                        }
+                        title="Defense mode"
+                      >
+                        <Shield size={14} className={!attackSimEnabled ? 'text-tracel-accent-blue' : 'text-slate-200'} />
+                        Defense
+                      </button>
+
+                      <button
+                        type="button"
+                        aria-pressed={attackSimEnabled}
+                        onClick={() => {
+                          if (attackSimEnabled) return;
+                          setAttackSimEnabled(true);
+                          toggleAttack(true);
+                        }}
+                        className={
+                          `flex items-center justify-center gap-2 px-4 py-2 rounded-md text-xs font-semibold ` +
+                          `transition-all outline-none focus-visible:ring-2 focus-visible:ring-red-500/30 ` +
+                          (attackSimEnabled ? 'text-white' : 'text-slate-300 hover:text-white')
+                        }
+                        title="Simulate attack"
+                      >
+                        <Zap size={14} className={attackSimEnabled ? 'text-white' : 'text-slate-200'} />
+                        Attack
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
           </div>
         </div>
-      </div>
 
-      {/* KPI Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
-        <div className="glass-card glow-hover p-5 hover-lift">
-          <p className="text-slate-400 text-xs uppercase tracking-wider">Total Packets</p>
-          <p className="mt-2 text-2xl sm:text-3xl font-semibold text-white data-mono tabular-nums whitespace-nowrap leading-none">
-            {stats.packets.toLocaleString()}
-          </p>
-        </div>
-
-        <div className="glass-card glow-hover p-5 hover-lift">
-          <p className="text-slate-400 text-xs uppercase tracking-wider">Threats (24 Hours)</p>
-          <p className="mt-2 text-2xl sm:text-3xl font-semibold text-white data-mono tabular-nums whitespace-nowrap leading-none">
-            {stats.threats.toLocaleString()}
-          </p>
-        </div>
-
-        <div className="glass-card glow-hover p-5 hover-lift">
-          <p className="text-slate-400 text-xs uppercase tracking-wider">Security Status</p>
-          <p
-            className={`mt-2 text-3xl font-semibold data-mono ${
-              status.tone === 'danger'
-                ? 'critical-shimmer'
-                : status.tone === 'safe'
-                ? 'text-white'
-                : 'text-slate-300'
-            }`}
-          >
-            {status.label}
-          </p>
-          <div className="mt-3 flex items-center gap-2 text-xs text-slate-300">
-            <ShieldAlert size={14} className="text-slate-200" />
-            <span>{currentPacket ? 'Live verdict applied' : 'Waiting for packets'}</span>
+        {/* KPI Row */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 shrink-0">
+          <div className="glass-card glow-hover p-5 hover-lift">
+            <p className="text-slate-400 text-xs uppercase tracking-wider">Total Packets</p>
+            <p className="mt-2 text-2xl sm:text-3xl font-semibold text-white data-mono tabular-nums whitespace-nowrap leading-none">
+              {stats.packets.toLocaleString()}
+            </p>
           </div>
-        </div>
 
-        <div className="glass-card glow-hover p-5 hover-lift">
-          <p className="text-slate-400 text-xs uppercase tracking-wider">Last Packet</p>
-          <div className="mt-2 text-sm text-slate-200 space-y-1 min-w-0">
-            <div className="min-w-0">
-              <span className="text-slate-400">Source:</span>{' '}
-              <span className="break-all">{currentPacket?.source_ip || '—'}</span>
-            </div>
-            <div className="min-w-0">
-              <span className="text-slate-400">Bytes:</span>{' '}
-              <span className="break-all">
-                {typeof currentPacket?.bytes === 'number' ? `${currentPacket.bytes} B` : '—'}
-              </span>
-            </div>
-            <div className="min-w-0">
-              <span className="text-slate-400">Method:</span>{' '}
-              <span className="break-all">{currentPacket?.method || '—'}</span>
+          <div className="glass-card glow-hover p-5 hover-lift">
+            <p className="text-slate-400 text-xs uppercase tracking-wider">Threats (24 Hours)</p>
+            <p className="mt-2 text-2xl sm:text-3xl font-semibold text-white data-mono tabular-nums whitespace-nowrap leading-none">
+              {stats.threats.toLocaleString()}
+            </p>
+          </div>
+
+          <div className="glass-card glow-hover p-5 hover-lift">
+            <p className="text-slate-400 text-xs uppercase tracking-wider">Security Status</p>
+            <p
+              className={`mt-2 text-3xl font-semibold data-mono ${
+                status.tone === 'danger'
+                  ? 'critical-shimmer'
+                  : status.tone === 'safe'
+                  ? 'text-white'
+                  : 'text-slate-300'
+              }`}
+            >
+              {status.label}
+            </p>
+            <div className="mt-3 flex items-center gap-2 text-xs text-slate-300">
+              <ShieldAlert size={14} className="text-slate-200" />
+              <span>{currentPacket ? 'Live verdict applied' : 'Waiting for packets'}</span>
             </div>
           </div>
-        </div>
-      </div>
 
-      {/* Main Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 min-w-0 items-stretch md:flex-1 md:min-h-0">
-        {/* Traffic */}
-        <div className="glass-card glow-hover md:col-span-2 lg:col-span-3 p-5 sm:p-6 flex flex-col animate-fade-up">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
-            <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-              <Wifi size={16} className="text-slate-200" />{' '}
-              {trafficView === 'globe' ? 'Global Traffic' : trafficView === 'feed' ? 'Live Event Feed' : 'Live Bandwidth'}
-            </h2>
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="flex bg-zinc-900 p-1 rounded-lg border border-zinc-800">
-                <button
-                  type="button"
-                  onClick={() => setTrafficView('bandwidth')}
-                  className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
-                    trafficView === 'bandwidth' ? 'bg-zinc-950/70 text-white' : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  Bandwidth
-                </button>
-                {isMobile ? (
-                  <button
-                    type="button"
-                    onClick={() => setTrafficView('feed')}
-                    className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
-                      trafficView === 'feed' ? 'bg-zinc-950/70 text-white' : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    Feed
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setTrafficView('globe')}
-                    className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
-                      trafficView === 'globe' ? 'bg-zinc-950/70 text-white' : 'text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    Globe
-                  </button>
-                )}
+          <div className="glass-card glow-hover p-5 hover-lift">
+            <p className="text-slate-400 text-xs uppercase tracking-wider">Last Packet</p>
+            <div className="mt-2 text-sm text-slate-200 space-y-1 min-w-0">
+              <div className="min-w-0">
+                <span className="text-slate-400">Source:</span>{' '}
+                <span className="break-all">{currentPacket?.source_ip || '—'}</span>
               </div>
-              <span className="text-xs px-2.5 py-1 bg-zinc-900 text-slate-200 rounded-lg border border-zinc-800">
-                <span
-                  className={
-                    attackActive
-                      ? 'critical-shimmer'
-                      : undefined
-                  }
-                >
-                  LIVE
+              <div className="min-w-0">
+                <span className="text-slate-400">Bytes:</span>{' '}
+                <span className="break-all">
+                  {typeof currentPacket?.bytes === 'number' ? `${currentPacket.bytes} B` : '—'}
                 </span>
-              </span>
+              </div>
+              <div className="min-w-0">
+                <span className="text-slate-400">Method:</span>{' '}
+                <span className="break-all">{currentPacket?.method || '—'}</span>
+              </div>
             </div>
           </div>
+        </div>
 
-          <div className="min-w-0 min-h-[260px] sm:min-h-[320px] md:flex-1 md:min-h-0">
-            {trafficView === 'globe' ? (
-              <div className="h-full overflow-hidden rounded-lg">
-                <TrafficGlobe />
+        {/* Main Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 min-w-0 items-stretch md:flex-1 md:min-h-0">
+          {/* Traffic */}
+          <div className="glass-card glow-hover md:col-span-2 lg:col-span-3 p-5 sm:p-6 flex flex-col animate-fade-up">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-4">
+              <h2 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
+                <Wifi size={16} className="text-slate-200" />{' '}
+                {trafficView === 'globe' ? 'Global Traffic' : trafficView === 'feed' ? 'Live Event Feed' : 'Live Bandwidth'}
+              </h2>
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex bg-zinc-900 p-1 rounded-lg border border-zinc-800">
+                  <button
+                    type="button"
+                    onClick={() => setTrafficView('bandwidth')}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
+                      trafficView === 'bandwidth' ? 'bg-zinc-950/70 text-white' : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Bandwidth
+                  </button>
+                  {isMobile ? (
+                    <button
+                      type="button"
+                      onClick={() => setTrafficView('feed')}
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
+                        trafficView === 'feed' ? 'bg-zinc-950/70 text-white' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Feed
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setTrafficView('globe')}
+                      className={`px-3 py-1.5 rounded-xl text-[11px] font-semibold transition-all ${
+                        trafficView === 'globe' ? 'bg-zinc-950/70 text-white' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      Globe
+                    </button>
+                  )}
+                </div>
+                <span className="text-xs px-2.5 py-1 bg-zinc-900 text-slate-200 rounded-lg border border-zinc-800">
+                  <span
+                    className={
+                      attackActive
+                        ? 'critical-shimmer'
+                        : undefined
+                    }
+                  >
+                    LIVE
+                  </span>
+                </span>
               </div>
-            ) : trafficView === 'feed' ? (
-              <div className="h-full overflow-y-auto scroll-hidden rounded-lg border border-zinc-800 bg-zinc-950/30 p-4">
-                {trafficData.length === 0 ? (
-                  <div className="space-y-3">
-                    <div className="h-4 w-2/3 skeleton" />
-                    <div className="h-4 w-5/6 skeleton" />
-                    <div className="h-4 w-3/4 skeleton" />
-                    <div className="h-4 w-1/2 skeleton" />
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {trafficData
-                      .slice()
-                      .reverse()
-                      .slice(0, 14)
-                      .map((p, i) => {
-                        const ts = new Date(p?.timestamp || Date.now()).toLocaleTimeString();
-                        const critical = !!p?.is_anomaly;
-                        const src = p?.source_ip || '—';
-                        const dst = p?.destination_ip || '—';
-                        const method = p?.method || '—';
-                        const bytes = typeof p?.bytes === 'number' ? `${p.bytes}B` : '—';
-                        return (
-                          <div
-                            key={`${p?.timestamp || 't'}-${p?.source_ip || 's'}-${i}`}
-                            className={
-                              'rounded-lg border px-3 py-2 ' +
-                              (critical
-                                ? 'border-red-500/25 bg-red-500/10'
-                                : 'border-white/10 bg-zinc-950/40')
-                            }
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="text-[11px] text-slate-400 data-mono">[{ts}]</div>
-                              <div className={
-                                'text-[10px] uppercase tracking-wider ' +
-                                (critical ? 'text-red-200' : 'text-slate-400')
-                              }>
-                                {critical ? 'Threat' : 'OK'}
+            </div>
+
+            <div className="min-w-0 min-h-[260px] sm:min-h-[320px] md:flex-1 md:min-h-0">
+              {trafficView === 'globe' ? (
+                <div className="h-full overflow-hidden rounded-lg">
+                  <TrafficGlobe />
+                </div>
+              ) : trafficView === 'feed' ? (
+                <div className="h-full overflow-y-auto scroll-hidden rounded-lg border border-zinc-800 bg-zinc-950/30 p-4">
+                  {trafficData.length === 0 ? (
+                    <div className="space-y-3">
+                      <div className="h-4 w-2/3 skeleton" />
+                      <div className="h-4 w-5/6 skeleton" />
+                      <div className="h-4 w-3/4 skeleton" />
+                      <div className="h-4 w-1/2 skeleton" />
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {trafficData
+                        .slice()
+                        .reverse()
+                        .slice(0, 14)
+                        .map((p, i) => {
+                          const ts = new Date(p?.timestamp || Date.now()).toLocaleTimeString();
+                          const critical = !!p?.is_anomaly;
+                          const src = p?.source_ip || '—';
+                          const dst = p?.destination_ip || '—';
+                          const method = p?.method || '—';
+                          const bytes = typeof p?.bytes === 'number' ? `${p.bytes}B` : '—';
+                          return (
+                            <div
+                              key={`${p?.timestamp || 't'}-${p?.source_ip || 's'}-${i}`}
+                              className={
+                                'rounded-lg border px-3 py-2 ' +
+                                (critical
+                                  ? 'border-red-500/25 bg-red-500/10'
+                                  : 'border-white/10 bg-zinc-950/40')
+                              }
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="text-[11px] text-slate-400 data-mono">[{ts}]</div>
+                                <div className={
+                                  'text-[10px] uppercase tracking-wider ' +
+                                  (critical ? 'text-red-200' : 'text-slate-400')
+                                }>
+                                  {critical ? 'Threat' : 'OK'}
+                                </div>
+                              </div>
+                              <div className="mt-1 text-sm text-slate-200">
+                                <span className="data-mono">{method}</span>{' '}
+                                <span className="text-slate-400">·</span>{' '}
+                                <span className="data-mono break-all">{src}</span>{' '}
+                                <span className="text-slate-400">→</span>{' '}
+                                <span className="data-mono break-all">{dst}</span>{' '}
+                                <span className="text-slate-400">·</span>{' '}
+                                <span className="data-mono">{bytes}</span>
                               </div>
                             </div>
-                            <div className="mt-1 text-sm text-slate-200">
-                              <span className="data-mono">{method}</span>{' '}
-                              <span className="text-slate-400">·</span>{' '}
-                              <span className="data-mono break-all">{src}</span>{' '}
-                              <span className="text-slate-400">→</span>{' '}
-                              <span className="data-mono break-all">{dst}</span>{' '}
-                              <span className="text-slate-400">·</span>{' '}
-                              <span className="data-mono">{bytes}</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                )}
-              </div>
-            ) : trafficData.length === 0 ? (
-              <div className="h-full flex flex-col justify-center gap-3">
-                <div className="h-6 w-40 skeleton" />
-                <div className="h-40 w-full skeleton" />
-                <div className="h-3 w-3/4 skeleton" />
-              </div>
-            ) : (
-              <div className="h-full min-w-0">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0}>
-                  <AreaChart data={trafficData}>
-                    <defs>
-                      <linearGradient id="bytesFillSafe" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="rgb(var(--tracel-accent-1-rgb))" stopOpacity={0.26} />
-                        <stop offset="95%" stopColor="rgb(var(--tracel-accent-1-rgb))" stopOpacity={0} />
-                      </linearGradient>
-                      <linearGradient id="bytesFillDanger" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#ef4444" stopOpacity={0.28} />
-                        <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <XAxis hide />
-                    <YAxis
-                      stroke="rgba(161,161,170,0.45)"
-                      fontSize={12}
-                      width={56}
-                      tickFormatter={(val) => `${val} B`}
-                      domain={[0, 'auto']}
-                    />
-                    <Tooltip
-                      contentStyle={{
-                        backgroundColor: 'rgba(9, 9, 11, 0.9)',
-                        border: '1px solid rgba(255,255,255,0.12)',
-                        color: '#fff',
-                        borderRadius: 14,
-                        backdropFilter: 'blur(12px)',
-                      }}
-                      itemStyle={{ color: '#e2e8f0' }}
-                      labelStyle={{ color: '#a1a1aa' }}
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="bytes"
-                      stroke={attackActive ? '#ef4444' : 'rgb(var(--tracel-accent-1-rgb))'}
-                      strokeWidth={2}
-                      fill={attackActive ? 'url(#bytesFillDanger)' : 'url(#bytesFillSafe)'}
-                      isAnimationActive={false}
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-col gap-4 md:col-span-2 lg:col-span-1 md:min-h-0 md:h-full">
-          {/* Logs */}
-          <div className="glass-card glow-hover p-5 sm:p-6 flex flex-col flex-1 min-h-0 animate-fade-up">
-            <h2 className="text-slate-400 mb-3 flex items-center gap-2 uppercase tracking-wider text-[10px]">
-              <Terminal size={12} /> Live System Logs
-            </h2>
-            <div className="flex-1 min-h-0 overflow-y-auto scroll-hidden space-y-2 pr-2">
-              {logs.length === 0 ? (
-                <div className="space-y-2">
-                  <div className="h-4 w-3/4 skeleton" />
-                  <div className="h-4 w-2/3 skeleton" />
-                  <div className="h-4 w-5/6 skeleton" />
-                  <div className="h-4 w-1/2 skeleton" />
+                          );
+                        })}
+                    </div>
+                  )}
+                </div>
+              ) : trafficData.length === 0 ? (
+                <div className="h-full flex flex-col justify-center gap-3">
+                  <div className="h-6 w-40 skeleton" />
+                  <div className="h-40 w-full skeleton" />
+                  <div className="h-3 w-3/4 skeleton" />
                 </div>
               ) : (
-                logs.map((line, i) => (
-                  <div
-                    key={`${line}-${i}`}
-                    className="border-b border-white/10 pb-2 last:border-0 text-slate-200 hover:text-white transition"
-                  >
-                    <span className="mr-2 text-slate-400">•</span>
-                    <span className="data-mono text-[12px]">{line}</span>
-                  </div>
-                ))
+                <div className="h-full min-w-0">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+                    <AreaChart data={trafficData}>
+                      <defs>
+                        <linearGradient id="bytesFillSafe" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="rgb(var(--tracel-accent-1-rgb))" stopOpacity={0.26} />
+                          <stop offset="95%" stopColor="rgb(var(--tracel-accent-1-rgb))" stopOpacity={0} />
+                        </linearGradient>
+                        <linearGradient id="bytesFillDanger" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#ef4444" stopOpacity={0.28} />
+                          <stop offset="95%" stopColor="#ef4444" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <XAxis hide />
+                      <YAxis
+                        stroke="rgba(161,161,170,0.45)"
+                        fontSize={12}
+                        width={56}
+                        tickFormatter={(val) => `${val} B`}
+                        domain={[0, 'auto']}
+                      />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: 'rgba(9, 9, 11, 0.9)',
+                          border: '1px solid rgba(255,255,255,0.12)',
+                          color: '#fff',
+                          borderRadius: 14,
+                          backdropFilter: 'blur(12px)',
+                        }}
+                        itemStyle={{ color: '#e2e8f0' }}
+                        labelStyle={{ color: '#a1a1aa' }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="bytes"
+                        stroke={attackActive ? '#ef4444' : 'rgb(var(--tracel-accent-1-rgb))'}
+                        strokeWidth={2}
+                        fill={attackActive ? 'url(#bytesFillDanger)' : 'url(#bytesFillSafe)'}
+                        isAnimationActive={false}
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
               )}
             </div>
           </div>
+
+          <div className="flex flex-col gap-4 md:col-span-2 lg:col-span-1 md:min-h-0 md:h-full">
+            {/* Logs */}
+            <div className="glass-card glow-hover p-5 sm:p-6 flex flex-col flex-1 min-h-0 animate-fade-up">
+              <h2 className="text-slate-400 mb-3 flex items-center gap-2 uppercase tracking-wider text-[10px]">
+                <Terminal size={12} /> Live System Logs
+              </h2>
+              <div className="flex-1 min-h-0 overflow-y-auto scroll-hidden space-y-2 pr-2">
+                {logs.length === 0 ? (
+                  <div className="space-y-2">
+                    <div className="h-4 w-3/4 skeleton" />
+                    <div className="h-4 w-2/3 skeleton" />
+                    <div className="h-4 w-5/6 skeleton" />
+                    <div className="h-4 w-1/2 skeleton" />
+                  </div>
+                ) : (
+                  logs.map((line, i) => (
+                    <div
+                      key={`${line}-${i}`}
+                      className="border-b border-white/10 pb-2 last:border-0 text-slate-200 hover:text-white transition"
+                    >
+                      <span className="mr-2 text-slate-400">•</span>
+                      <span className="data-mono text-[12px]">{line}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
         </div>
-      </div>
+      </FreshnessGuard>
+      )}
     </div>
   );
 }

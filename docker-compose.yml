@@ -1,0 +1,67 @@
+version: "3.8"
+
+services:
+  server:
+    build: 
+      context: ./server
+      # Assuming you will add a Dockerfile to the server later, or you can run this via volume
+    image: tracel-server
+    command: npm run dev
+    ports:
+      - "3001:3001"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - AI_SERVICE_URL=http://ai-engine:5000
+    depends_on:
+      - redis
+      - ai-engine
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  ai-engine:
+    build:
+      context: ./ai-engine
+    image: tracel-ai
+    ports:
+      - "5000:5000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  ai-worker:
+    build:
+      context: ./ai-engine
+    image: tracel-ai
+    command: ["python", "worker.py"]
+    environment:
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s

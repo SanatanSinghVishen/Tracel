@@ -42,13 +42,15 @@ export function getServerUrl() {
 export function getSocket() {
   const url = getServerUrl();
 
-  // If VITE_SERVER_URL changes between HMR reloads, recreate.
   if (!socketSingleton || socketUrl !== url) {
     socketUrl = url;
     socketSingleton = io(url, {
       transports: ['websocket', 'polling'],
       autoConnect: false,
       withCredentials: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 30000,
+      randomizationFactor: 0.5,
     });
   }
 

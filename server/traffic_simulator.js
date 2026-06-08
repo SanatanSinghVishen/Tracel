@@ -3,6 +3,76 @@ const axios = require('axios');
 const http = require('http');
 const https = require('https');
 const log = require('./logger');
+const Redis = require('ioredis');
+const { z } = require('zod');
+
+const resultSchema = z.object({
+    id: z.string(),
+    score: z.number().nullable().optional(),
+    anomaly_score: z.number().nullable().optional(),
+    anomalyScore: z.number().nullable().optional(),
+    explanation: z.array(z.object({
+        feature: z.string(),
+        shap_value: z.number(),
+        actual_value: z.number()
+    })).nullable().optional(),
+    mitre: z.object({
+        technique_id: z.string(),
+        technique_name: z.string(),
+        tactic: z.string(),
+        confidence: z.enum(["high", "medium", "low"])
+    }).nullable().optional(),
+}).strip();
+
+let redisClient = null;
+if (process.env.REDIS_URL) {
+    redisClient = new Redis(process.env.REDIS_URL);
+    redisClient.on('error', (err) => log.warn('Redis error', { error: err.message }));
+}
+
+const inFlightPackets = new Map();
+
+if (redisClient) {
+    (async function startResultWorker() {
+        while (true) {
+            try {
+                const item = await redisClient.brpop('tracel:ai:results', 5);
+                if (!item) continue;
+                const [, json] = item;
+                
+                let result;
+                try {
+                    const rawResult = JSON.parse(json);
+                    result = resultSchema.parse(rawResult);
+                } catch (e) {
+                    log.warn('Invalid result from AI, moving to dead-letter queue', { error: e.message, payload: json });
+                    await redisClient.lpush('tracel:ai:deadletter', json);
+                    continue;
+                }
+
+                const inFlight = inFlightPackets.get(result.id);
+                if (!inFlight) continue;
+                inFlightPackets.delete(result.id);
+
+                const { packetData, emitPacket, persistPacket } = inFlight;
+                packetData.anomaly_score = Number.isFinite(Number(result.score)) ? Number(result.score) : null;
+                packetData.ai_id = result.id;
+                packetData.is_anomaly = false; // Will be set dynamically by emitPacket threshold logic
+
+                if (typeof emitPacket === 'function') {
+                    try { emitPacket(packetData); } catch (e) { log.warn('emitPacket failed', e); }
+                }
+                if (typeof persistPacket === 'function') {
+                    try { persistPacket(packetData); } catch (e) { log.warn('persistPacket failed', e); }
+                }
+            } catch (e) {
+                log.warn('Result worker error', { error: e.message });
+                await new Promise(r => setTimeout(r, 1000));
+            }
+        }
+    })();
+}
+
 
 let lastAiWarnAt = 0;
 function warnAiOncePerInterval(message, meta) {
@@ -390,6 +460,8 @@ function createTrafficStream({ owner, emitPacket, persistPacket, getAiReady } = 
 
         // Generate behavior-based packet data (no hardcoded anomaly overrides).
         const packetData = getPacketData(isAttackMode, { owner });
+        const packetId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const packetLogger = log.child ? log.child({ packetId }) : log;
 
         // Safety guard: do not call AI while it's still waking up / not ready.
         const aiReady = typeof getAiReady === 'function' ? !!getAiReady() : true;
@@ -405,62 +477,95 @@ function createTrafficStream({ owner, emitPacket, persistPacket, getAiReady } = 
             // AI still waking; skip scoring quietly.
             packetData.is_anomaly = false;
             packetData.anomaly_score = null;
-        } else if (!isAiDisabled() && aiReady && aiUrl) {
-            try {
-                if (Date.now() < aiBackoffUntilMs) {
-                    packetData.is_anomaly = false;
-                    packetData.anomaly_score = null;
-                    // Skip scoring during backoff window.
-                } else {
-                const aiId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-                const response = await aiClient.post(
-                    aiUrl,
-                    {
+        } else if (!isAiDisabled() && aiReady && (redisClient || aiUrl)) {
+            const aiId = packetId;
+            
+            // REDIS ASYNC QUEUE PATH
+            if (redisClient && redisClient.status === 'ready') {
+                inFlightPackets.set(aiId, { packetData, emitPacket, persistPacket });
+                
+                // Cleanup old in-flight packets to prevent memory leak if AI engine drops them
+                if (inFlightPackets.size > 10000) {
+                    const oldestKeys = Array.from(inFlightPackets.keys()).slice(0, 1000);
+                    oldestKeys.forEach(k => inFlightPackets.delete(k));
+                }
+
+                try {
+                    await redisClient.lpush('tracel:ai:queue', JSON.stringify({
                         id: aiId,
                         bytes: packetData.bytes,
                         method: packetData.method,
-                        // Advanced features for updated AI model (Step 2).
                         protocol: packetData.protocol,
                         entropy: packetData.entropy,
                         dst_port: packetData.dst_port,
-                    },
-                    undefined
-                );
-
-                // Raw score only (lower => more anomalous). Node will threshold it dynamically.
-                // Back-compat: some older AI versions returned { anomaly_score, is_anomaly }.
-                const rawScore = response?.data?.score ?? response?.data?.anomaly_score ?? response?.data?.anomalyScore;
-                const scoreNum = Number(rawScore);
-                packetData.anomaly_score = Number.isFinite(scoreNum) ? scoreNum : null;
-                packetData.ai_id = response?.data?.id || response?.data?.ai_id || aiId;
-                packetData.is_anomaly = false;
-                aiBackoffUntilMs = 0;
-                aiBackoffLevel = 0;
+                    }));
+                    
+                    // Schedule next packet immediately without waiting for AI
+                    const delay = isAttackMode
+                        ? (Math.random() < 0.15 ? 10 : (Math.floor(Math.random() * 70) + 20))
+                        : randomInt(1000, 10000);
+                    timer = setTimeout(generatePacket, delay);
+                    return; // exit early, let worker handle emit & persist
+                } catch (err) {
+                    packetLogger.warn('Failed to enqueue packet to Redis, falling back to null score', { error: err.message });
+                    inFlightPackets.delete(aiId);
+                    packetData.is_anomaly = false;
+                    packetData.anomaly_score = null;
                 }
-            } catch (error) {
-                packetData.is_anomaly = false;
-                packetData.anomaly_score = null;
+            } else {
+                // FALLBACK DIRECT HTTP PATH
+                try {
+                    if (Date.now() < aiBackoffUntilMs) {
+                        packetData.is_anomaly = false;
+                        packetData.anomaly_score = null;
+                        // Skip scoring during backoff window.
+                    } else {
+                        const response = await aiClient.post(
+                            aiUrl,
+                            {
+                                id: aiId,
+                                bytes: packetData.bytes,
+                                method: packetData.method,
+                                protocol: packetData.protocol,
+                                entropy: packetData.entropy,
+                                dst_port: packetData.dst_port,
+                            },
+                            undefined
+                        );
 
-                const status = error?.response?.status;
-                const detail = error?.response?.data;
-                const code = error?.code;
-                const msg = error?.message;
+                        const rawScore = response?.data?.score ?? response?.data?.anomaly_score ?? response?.data?.anomalyScore;
+                        const scoreNum = Number(rawScore);
+                        packetData.anomaly_score = Number.isFinite(scoreNum) ? scoreNum : null;
+                        packetData.ai_id = response?.data?.id || response?.data?.ai_id || aiId;
+                        packetData.is_anomaly = false;
+                        aiBackoffUntilMs = 0;
+                        aiBackoffLevel = 0;
+                    }
+                } catch (error) {
+                    packetData.is_anomaly = false;
+                    packetData.anomaly_score = null;
 
-                if (status === 429) {
-                    const retryAfter = Number(error?.response?.headers?.['retry-after']);
-                    const baseMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 5000;
-                    aiBackoffLevel = Math.min(aiBackoffLevel + 1, 6);
-                    const backoffMs = Math.min(baseMs * (2 ** aiBackoffLevel), 60_000);
-                    aiBackoffUntilMs = Date.now() + backoffMs;
+                    const status = error?.response?.status;
+                    const detail = error?.response?.data;
+                    const code = error?.code;
+                    const msg = error?.message;
+
+                    if (status === 429) {
+                        const retryAfter = Number(error?.response?.headers?.['retry-after']);
+                        const baseMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : 5000;
+                        aiBackoffLevel = Math.min(aiBackoffLevel + 1, 6);
+                        const backoffMs = Math.min(baseMs * (2 ** aiBackoffLevel), 60_000);
+                        aiBackoffUntilMs = Date.now() + backoffMs;
+                    }
+
+                    warnAiOncePerInterval('[SIMULATOR] AI score unavailable (using null score)', {
+                        url: aiUrl,
+                        code,
+                        status,
+                        message: msg,
+                        detail,
+                    });
                 }
-
-                warnAiOncePerInterval('[SIMULATOR] AI score unavailable (using null score)', {
-                    url: aiUrl,
-                    code,
-                    status,
-                    message: msg,
-                    detail,
-                });
             }
         } else if (!isAiDisabled() && aiReady && !aiUrl) {
             packetData.is_anomaly = false;
@@ -482,7 +587,7 @@ function createTrafficStream({ owner, emitPacket, persistPacket, getAiReady } = 
             try {
                 emitPacket(packetData);
             } catch (e) {
-                log.warn('emitPacket failed', e);
+                packetLogger.warn('emitPacket failed', e);
             }
         }
 
@@ -490,7 +595,7 @@ function createTrafficStream({ owner, emitPacket, persistPacket, getAiReady } = 
             try {
                 persistPacket(packetData);
             } catch (e) {
-                log.warn('persistPacket failed', e);
+                packetLogger.warn('persistPacket failed', e);
             }
         }
 

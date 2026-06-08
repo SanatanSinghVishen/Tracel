@@ -1,18 +1,18 @@
 # ai-engine/app.py
 from flask import Flask, request, jsonify, g
-import joblib
-import pandas as pd
 from pathlib import Path
 import os
-from datetime import datetime, timedelta, timezone
-import traceback
-import math
 import time
+import threading
 
-from pymongo import MongoClient
 from dotenv import load_dotenv, dotenv_values
+from inference import predict, reload_model
+from apscheduler.schedulers.background import BackgroundScheduler
+import retrain
+from pymongo import MongoClient
 
 app = Flask(__name__)
+START_TIME = time.time()
 
 
 @app.route('/', methods=['GET'])
@@ -76,189 +76,83 @@ if _server_env_path.exists():
         pass
 
 
-def load_model():
-    model_path = Path(str(MODEL_PATH))
-    if not model_path.exists():
-        return None, f"model file not found at {model_path}"
-    try:
-        return joblib.load(model_path), None
-    except Exception as e:
-        return None, f"failed to load model from {model_path}: {e}"
-
-
-model = None
-model_error = None
-
-
-PROTOCOL_TO_INDEX = {
-    'TCP': 0,
-    'UDP': 1,
-    'ICMP': 2,
-    'HTTP': 3,
-}
-
-COMMON_PORTS = {80, 443, 8080}
-ATTACK_PORTS = {23, 53, 123, 445, 3389, 1900, 4444}
-
-
-def _protocol_index(protocol: str) -> int:
-    p = (protocol or '').strip().upper()
-    return int(PROTOCOL_TO_INDEX.get(p, 0))
-
-
-def _build_features(raw_df: pd.DataFrame) -> pd.DataFrame:
-    df = raw_df.copy()
-
-    df['bytes_log'] = df['bytes'].astype(float).map(lambda x: math.log1p(max(0.0, x)))
-    df['entropy'] = pd.to_numeric(df['entropy'], errors='coerce').fillna(0.3).astype(float).clip(0.0, 1.0)
-    df['dst_port'] = pd.to_numeric(df['dst_port'], errors='coerce').fillna(80).astype(int)
-
-    df['proto_tcp'] = (df['protocol_index'] == PROTOCOL_TO_INDEX['TCP']).astype(int)
-    df['proto_udp'] = (df['protocol_index'] == PROTOCOL_TO_INDEX['UDP']).astype(int)
-    df['proto_icmp'] = (df['protocol_index'] == PROTOCOL_TO_INDEX['ICMP']).astype(int)
-    df['proto_http'] = (df['protocol_index'] == PROTOCOL_TO_INDEX['HTTP']).astype(int)
-
-    df['port_is_common'] = df['dst_port'].isin(COMMON_PORTS).astype(int)
-    df['port_is_attack'] = df['dst_port'].isin(ATTACK_PORTS).astype(int)
-    df['port_is_weird'] = (~df['dst_port'].isin(COMMON_PORTS)).astype(int)
-
-    cols = [
-        'bytes_log',
-        'entropy',
-        'dst_port',
-        'proto_tcp',
-        'proto_udp',
-        'proto_icmp',
-        'proto_http',
-        'port_is_common',
-        'port_is_attack',
-        'port_is_weird',
-    ]
-    return df[cols]
-
-
-def ensure_model_loaded():
-    global model, model_error
-    if model is not None:
-        return model, None
-    if model_error is not None:
-        return None, model_error
-
-    print("Loading AI Model...")
-    try:
-        m, err = load_model()
-        model = m
-        model_error = err
-        if model is None:
-            print(f"AI model unavailable: {model_error}")
-        else:
-            print(f"AI model loaded from {MODEL_PATH}")
-        return model, model_error
-    except BaseException as e:
-        # Catch even non-Exception failures (e.g., KeyboardInterrupt during slow imports)
-        model = None
-        model_error = f"failed to load model: {e}"
-        print(f"AI model unavailable: {model_error}")
-        return None, model_error
-
+@app.route('/admin/reload-model', methods=['POST'])
+def handle_reload_model():
+    success, msg = reload_model()
+    if success:
+        return jsonify({"ok": True, "message": msg}), 200
+    else:
+        return jsonify({"ok": False, "error": msg}), 500
 
 @app.route('/health', methods=['GET'])
 def health():
-    # Lightweight health endpoint for cold-start wake pings.
-    # - GET /health -> fast response, does NOT force model load.
-    # - GET /health?load=1 -> detailed health, forces model load (used by backend diagnostics).
-    force_load = request.args.get('load') == '1'
-
-    if not force_load:
-        return jsonify({"status": "running"}), 200
-
-    loaded_model, loaded_error = ensure_model_loaded()
-
-    threshold = None
-    model_type = None
-    if isinstance(loaded_model, dict):
-        model_type = 'bundle'
-        threshold = loaded_model.get('threshold')
-    elif loaded_model is not None:
-        model_type = 'sklearn'
+    import inference
+    import os
+    
+    uptime = int(time.time() - START_TIME)
+    
+    with inference._model_lock:
+        loaded_model = inference._model
+        loaded_error = inference._model_error
+        explainer = inference._explainer
+        
+    model_status = 'ok'
+    if loaded_error:
+        model_status = 'error'
+    elif not loaded_model:
+        model_status = 'degraded'
+        
+    # Get retrain job if scheduled
+    last_retrain = None
+    next_retrain = None
+    if 'scheduler' in globals():
+        for job in scheduler.get_jobs():
+            if job.name == '_scheduled_retrain':
+                next_retrain = job.next_run_time.isoformat() if job.next_run_time else None
 
     payload = {
-        "ok": True,
-        "modelLoaded": loaded_model is not None,
-        "modelError": loaded_error,
-        "modelType": model_type,
-        "modelPath": str(MODEL_PATH),
-        "threshold": threshold,
+        "status": "ok" if model_status == 'ok' else model_status,
+        "service": "ai-engine",
+        "version": "1.0.0",
+        "uptime_s": uptime,
+        "checks": {
+            "model": {
+                "status": model_status,
+                "path": str(inference.MODEL_PATH),
+                "explainer_initialized": explainer is not None,
+                "error": str(loaded_error) if loaded_error else None,
+                "next_retrain_at": next_retrain
+            }
+        }
     }
-
-    # If the caller asked for a forced load and it failed, surface that via status.
-    if loaded_model is None:
-        return jsonify(payload), 503
-    return jsonify(payload), 200
+    
+    status_code = 200 if payload["status"] in ["ok", "degraded"] else 503
+    return jsonify(payload), status_code
 
 @app.route('/predict', methods=['POST'])
-def predict():
+def handle_predict():
     try:
-        m, err = ensure_model_loaded()
-        if m is None:
-            return jsonify({"error": "model not loaded", "details": err}), 503
-
         data = request.json or {}
-
-        # Optional correlation id for callers (echoed back).
-        packet_id = data.get('id', None)
-
-        # 1. PREPARE DATA (v2 feature vector)
-        # Model expects: [bytes, protocol_index, entropy, dst_port]
-        # Keep this endpoint tolerant to partial payloads.
-        packet_bytes = int(data.get('bytes', 0) or 0)
-
-        protocol = data.get('protocol')
-        protocol_index = _protocol_index(protocol)
-
-        entropy_raw = data.get('entropy', None)
-        try:
-            entropy = float(entropy_raw) if entropy_raw is not None else 0.3
-        except Exception:
-            entropy = 0.3
-        entropy = max(0.0, min(1.0, entropy))
-
-        # Accept both dst_port and port for compatibility.
-        port_raw = data.get('dst_port', None)
-        if port_raw is None:
-            port_raw = data.get('port', None)
-        try:
-            dst_port = int(port_raw) if port_raw is not None else 80
-        except Exception:
-            dst_port = 80
-
-        features = pd.DataFrame([
-            {
-                'bytes': packet_bytes,
-                'protocol_index': protocol_index,
-                'entropy': entropy,
-                'dst_port': dst_port,
-            }
-        ])
-
-        # 2. ASK THE BRAIN (score only)
-        # IsolationForest decision_function: lower => more anomalous.
-        # CRITICAL: do NOT return a binary label from this service; thresholding happens in Node.
-        X = _build_features(features)
-        if isinstance(m, dict):
-            pipeline = m.get('model')
-            cols = m.get('feature_columns') or list(X.columns)
-            score = float(pipeline.decision_function(X[cols])[0])
-        else:
-            score = float(m.decision_function(X)[0])
-
-        return jsonify({
-            "score": float(score),
-            "id": packet_id,
-        })
-
+        result = predict(data)
+        return jsonify(result)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+@app.route('/admin/model-status', methods=['GET'])
+def model_status():
+    import inference
+    with inference._model_lock:
+        is_loaded = inference._model is not None
+        err = inference._model_error
+    
+    return jsonify({
+        "ok": True,
+        "loaded": is_loaded,
+        "error": err,
+        "modelPath": str(inference.MODEL_PATH),
+        "lastRetrainStatus": getattr(app, 'last_retrain_status', None),
+        "lastRetrainTime": getattr(app, 'last_retrain_time', None),
+    }), 200
 
 
 def _get_mongo_url() -> str:
@@ -774,6 +668,16 @@ def report_threat_intel():
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
 
+def _scheduled_retrain():
+    try:
+        hours = int(os.getenv('RETRAIN_INTERVAL_HOURS', '24'))
+    except ValueError:
+        hours = 24
+        
+    success, msg = retrain.run_retrain_job(since_hours=hours)
+    app.last_retrain_status = msg
+    app.last_retrain_time = datetime.now().isoformat() + "Z"
+
 if __name__ == '__main__':
     host = os.getenv('HOST', '0.0.0.0')
     try:
@@ -781,8 +685,20 @@ if __name__ == '__main__':
     except Exception:
         port = 5000
     print(f"AI Service running on http://{host}:{port}")
+    
     # Preload model so the first /predict doesn't pay load cost.
-    ensure_model_loaded()
+    import inference
+    inference.reload_model()
+    
+    # Start the APScheduler for retraining
+    try:
+        hours = int(os.getenv('RETRAIN_INTERVAL_HOURS', '24'))
+    except ValueError:
+        hours = 24
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(_scheduled_retrain, 'interval', hours=hours)
+    scheduler.start()
+    
     # Enable concurrency: the default dev server is single-threaded, which can
     # backlog under bursty traffic (Attack mode) and cause client-side timeouts.
     app.run(host=host, port=port, threaded=True)

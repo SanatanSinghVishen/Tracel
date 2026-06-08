@@ -16,12 +16,16 @@ import {
   ResponsiveContainer,
   Scatter,
   Tooltip,
+  Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
 } from 'recharts';
 import { Activity, Database, Download, Globe2, RefreshCw, Search, ShieldAlert, Sparkles, X } from 'lucide-react';
 import { useSocket } from '../hooks/useSocket.js';
 import { buildAuthHeaders, getOrCreateAnonId } from '../lib/authClient.js';
+import ExplanationBadge from '../components/ExplanationBadge';
+import MitreBadge from '../components/MitreBadge';
+import FreshnessGuard from '../components/FreshnessGuard';
 
 function fmtTime(ts) {
   if (!ts) return '—';
@@ -918,8 +922,9 @@ export default function Forensics() {
   }, []);
 
   return (
-    <div className="min-w-0 space-y-6 animate-fade-in">
-      <div className="glass-card glow-hover p-5 sm:p-6">
+    <FreshnessGuard>
+      <div className="min-w-0 space-y-6 animate-fade-in">
+        <div className="glass-card glow-hover p-5 sm:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="flex items-center gap-2 text-slate-300 mb-1">
@@ -1146,7 +1151,7 @@ export default function Forensics() {
                 tickFormatter={(v) => bucketLabelFromKey(v, timelineMeta?.bucket || 'hour')}
               />
               <YAxis stroke="#444" fontSize={12} allowDecimals={false} />
-              <Tooltip
+              <RechartsTooltip
                 contentStyle={{
                   backgroundColor: 'rgba(2, 6, 23, 0.9)',
                   border: '1px solid rgba(255,255,255,0.12)',
@@ -1334,7 +1339,7 @@ export default function Forensics() {
                 padding={{ top: 10, bottom: 10 }}
                 tickFormatter={(v) => (Number.isFinite(Number(v)) ? Number(v).toFixed(2) : '')}
               />
-              <Tooltip
+              <RechartsTooltip
                 cursor={{ stroke: 'rgba(255,255,255,0.15)' }}
                 content={renderScoreTooltip}
               />
@@ -1596,7 +1601,7 @@ export default function Forensics() {
                 ) : (
                   <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={224}>
                     <PieChart>
-                      <Tooltip
+                      <RechartsTooltip
                         contentStyle={{
                           backgroundColor: 'rgba(2, 6, 23, 0.9)',
                           border: '1px solid rgba(255,255,255,0.12)',
@@ -1696,7 +1701,7 @@ export default function Forensics() {
                     <BarChart data={intelReport.confidence}>
                       <XAxis dataKey="bucket" stroke="#444" fontSize={12} />
                       <YAxis stroke="#444" fontSize={12} allowDecimals={false} />
-                      <Tooltip
+                      <RechartsTooltip
                         contentStyle={{
                           backgroundColor: 'rgba(2, 6, 23, 0.9)',
                           border: '1px solid rgba(255,255,255,0.12)',
@@ -1880,6 +1885,14 @@ export default function Forensics() {
                 <span className="inline-flex items-center px-2 py-1 rounded text-xs font-bold border border-white/10 bg-gradient-to-r from-tracel-accent-blue/20 to-tracel-accent-purple/20 text-slate-100">
                   AI score: {typeof selected.anomaly_score === 'number' ? selected.anomaly_score : '—'}
                 </span>
+                {selected.mitre && (
+                  <MitreBadge mitre={selected.mitre} />
+                )}
+                {selected.is_anomaly && selected.explanation && (
+                  <div className="w-full">
+                    <ExplanationBadge explanation={selected.explanation} />
+                  </div>
+                )}
               </div>
 
               <pre className="text-xs text-slate-200 glass border border-white/10 rounded-2xl p-3 overflow-auto" data-lenis-prevent>
@@ -1890,5 +1903,6 @@ export default function Forensics() {
         </div>
       ) : null}
     </div>
+    </FreshnessGuard>
   );
 }

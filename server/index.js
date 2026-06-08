@@ -1054,28 +1054,7 @@ function scheduleStopIfIdle(ownerUserId) {
     }, STREAM_IDLE_TTL_MS);
 }
 
-const DASHBOARD_ORIGINS = (process.env.DASHBOARD_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-
-function isAllowedOrigin(origin) {
-    if (!origin) return true;
-    if (DASHBOARD_ORIGINS.includes(origin)) return true;
-    return /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-}
-
-const corsOptions = {
-    origin: (origin, cb) => {
-        if (isAllowedOrigin(origin)) return cb(null, true);
-        return cb(null, false);
-    },
-    credentials: true,
-    methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'x-tracel-anon-id'],
-    exposedHeaders: ['Retry-After'],
-    maxAge: 600,
-};
+const { corsOptions, CorsForbiddenError } = require('./config/cors');
 
 function parseCookies(cookieHeader) {
     const out = {};
@@ -1121,10 +1100,27 @@ function ensureSessionCookie(req, res, next) {
 const app = express();
 app.use(express.json());
 app.use(cors(corsOptions));
+
+// Error handling middleware to explicitly return 403 for CORS
+app.use((err, req, res, next) => {
+    if (err instanceof CorsForbiddenError || err.message.includes('CORS')) {
+        return res.status(403).json({ error: 'Origin not allowed by CORS' });
+    }
+    next(err);
+});
 app.options(/.*/, cors(corsOptions));
 app.use(ensureSessionCookie);
 
+// Rate Limiting Middlewares
+const { globalLimiter, strictLimiter } = require('./middleware/rateLimiter');
+app.use('/api', globalLimiter);
+app.use('/api/admin', strictLimiter);
+app.use('/api/settings/destructive', strictLimiter);
+
 // Basic health/info routes for hosting providers (e.g., Render) and browsers.
+const healthRoute = require('./routes/health');
+app.use('/health', healthRoute);
+
 app.get('/', (req, res) => {
     return res.status(200).json({
         ok: true,
@@ -1138,178 +1134,84 @@ app.get('/', (req, res) => {
     });
 });
 
+const { createAdapter } = require('@socket.io/redis-adapter');
+const Redis = require('ioredis');
+
 // Common mistaken path; keep it friendly.
 app.get('/get', (req, res) => {
     return res.redirect(302, '/api/status');
 });
 
+let isRedisAdapterActive = false;
+
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: {
-        origin: (origin, cb) => {
-            if (isAllowedOrigin(origin)) return cb(null, true);
-            return cb(null, false);
-        },
-        credentials: true,
-        methods: ["GET", "POST"]
-    }
+    cors: corsOptions
 });
 
-const ADMIN_EMAIL = (process.env.ADMIN_EMAIL || '').trim().toLowerCase();
-const ADMIN_USER_ID = (process.env.ADMIN_USER_ID || '').trim();
-const CLERK_JWKS_URL = (process.env.CLERK_JWKS_URL || '').trim();
-
-const jwksClient = CLERK_JWKS_URL
-    ? jwksRsa({
-        jwksUri: CLERK_JWKS_URL,
-        cache: true,
-        cacheMaxEntries: 5,
-        cacheMaxAge: 10 * 60 * 1000,
-        rateLimit: true,
-        jwksRequestsPerMinute: 10,
-    })
-    : null;
-
-function getBearerTokenFromHeaders(headers) {
-    const auth = headers?.authorization;
-    if (typeof auth !== 'string') return '';
-    const m = auth.match(/^Bearer\s+(.+)$/i);
-    return m ? m[1].trim() : '';
-}
-
-function getAnonIdFromHeaders(headers) {
-    const anon = headers?.['x-tracel-anon-id'];
-    return typeof anon === 'string' ? anon.trim() : '';
-}
-
-function safeDecodeJwtPayload(token) {
+if (process.env.REDIS_URL) {
     try {
-        const payload = jwt.decode(token);
-        return payload && typeof payload === 'object' ? payload : null;
-    } catch {
-        return null;
-    }
-}
-
-function verifyJwtIfConfigured(token) {
-    if (!jwksClient) return Promise.resolve(null);
-    return new Promise((resolve) => {
-        jwt.verify(
-            token,
-            (header, cb) => {
-                jwksClient.getSigningKey(header.kid, (err, key) => {
-                    if (err) return cb(err);
-                    const signingKey = key.getPublicKey();
-                    return cb(null, signingKey);
-                });
-            },
-            {
-                algorithms: ['RS256'],
-            },
-            (err, decoded) => {
-                if (err) return resolve(null);
-                return resolve(decoded && typeof decoded === 'object' ? decoded : null);
+        const pubClient = new Redis(process.env.REDIS_URL);
+        const subClient = pubClient.duplicate();
+        
+        let pubConnected = false;
+        let subConnected = false;
+        
+        const checkReady = () => {
+            if (pubConnected && subConnected && !isRedisAdapterActive) {
+                log.info('Redis pub/sub connected, attaching Socket.IO Redis adapter');
+                io.adapter(createAdapter(pubClient, subClient));
+                isRedisAdapterActive = true;
             }
-        );
-    });
-}
-
-function extractEmailFromClaims(claims) {
-    if (!claims || typeof claims !== 'object') return '';
-
-    // Clerk JWTs can vary depending on templates and token types.
-    // Be permissive in where we look for an email address.
-    const directCandidates = [
-        claims.email,
-        claims.email_address,
-        claims.primary_email,
-        claims.primary_email_address,
-        claims?.user?.email,
-        claims?.user?.email_address,
-        claims?.user?.primary_email,
-        claims?.user?.primary_email_address,
-        claims?.public_metadata?.email,
-        claims?.publicMetadata?.email,
-        claims?.unsafe_metadata?.email,
-        claims?.unsafeMetadata?.email,
-    ];
-
-    const fromDirect = directCandidates.find((v) => typeof v === 'string' && v.includes('@'));
-    if (fromDirect) return String(fromDirect).trim().toLowerCase();
-
-    // Common Clerk shapes: email_addresses is an array of objects.
-    const listCandidates = [
-        claims.email_addresses,
-        claims?.user?.email_addresses,
-        claims?.user?.emailAddresses,
-    ];
-
-    for (const list of listCandidates) {
-        if (!Array.isArray(list)) continue;
-        for (const entry of list) {
-            if (typeof entry === 'string' && entry.includes('@')) return entry.trim().toLowerCase();
-            if (entry && typeof entry === 'object') {
-                const v = entry.email_address || entry.emailAddress || entry.email;
-                if (typeof v === 'string' && v.includes('@')) return v.trim().toLowerCase();
-            }
-        }
-    }
-
-    return '';
-}
-
-function getAdminNotConfiguredError() {
-    // Avoid leaking any specific configured values.
-    if (!ADMIN_EMAIL && !ADMIN_USER_ID) {
-        return 'Admin not configured: set ADMIN_EMAIL or ADMIN_USER_ID on the server';
-    }
-    return 'Admin only';
-}
-
-async function getAuthContextFromHeaders(headers) {
-    const token = getBearerTokenFromHeaders(headers);
-    const anonId = getAnonIdFromHeaders(headers);
-    const sid = getSessionIdFromHeaders(headers);
-
-    if (!token) {
-        return {
-            ownerUserId: sid ? `sess:${sid}` : (anonId ? `anon:${anonId}` : `sess:${createSessionId()}`),
-            ownerEmail: '',
-            isAdmin: false,
-            verified: false,
         };
+
+        pubClient.on('ready', () => { pubConnected = true; checkReady(); });
+        subClient.on('ready', () => { subConnected = true; checkReady(); });
+
+        pubClient.on('error', (err) => {
+            log.warn('Redis pubClient error (falling back to memory adapter)', { error: err.message });
+            isRedisAdapterActive = false;
+            // The default adapter is automatically used if we don't call io.adapter, 
+            // but we can't easily revert on the fly. 
+        });
+        subClient.on('error', (err) => {
+            log.warn('Redis subClient error', { error: err.message });
+            isRedisAdapterActive = false;
+        });
+    } catch (e) {
+        log.warn('Failed to initialize Redis adapter, using memory fallback', { error: e.message });
     }
-
-    const verifiedClaims = await verifyJwtIfConfigured(token);
-    const claims = verifiedClaims || safeDecodeJwtPayload(token);
-
-    const userId = typeof claims?.sub === 'string' && claims.sub.trim() ? claims.sub.trim() : '';
-    const email = extractEmailFromClaims(claims);
-
-    const isAdmin = (
-        (ADMIN_USER_ID && userId && userId === ADMIN_USER_ID)
-        || (ADMIN_EMAIL && email && email === ADMIN_EMAIL)
-    );
-
-    return {
-        ownerUserId: userId || (sid ? `sess:${sid}` : (anonId ? `anon:${anonId}` : `sess:${createSessionId()}`)),
-        ownerEmail: email,
-        isAdmin,
-        verified: !!verifiedClaims,
-    };
 }
+
+app.get('/health/socket', (req, res) => {
+    res.json({
+        ok: true,
+        adapter: isRedisAdapterActive ? 'redis' : 'memory',
+        prefix: isRedisAdapterActive ? 'socket.io' : null
+    });
+});
+
+// Socket.IO Connection Throttle
+const socketThrottle = require('./middleware/socketThrottle');
+io.use(socketThrottle);
+
+const { authMiddleware, getAuthContextFromHeaders, jwksClient } = require('./middleware/authMiddleware');
+const requireAdmin = require('./middleware/requireAdmin');
+
+// Mount auth middleware globally for REST routes
+app.use(authMiddleware);
+
+// Mount requireAdmin for destructive/admin routes
+app.use('/api/admin', requireAdmin);
+app.use('/api/settings/destructive', requireAdmin);
+app.use('/api/contact', requireAdmin);
 
 // CONNECT TO MONGODB (optional)
 mongoose.set('bufferCommands', false);
 
 const mongoUrl = process.env.MONGO_URL;
-if (!mongoUrl) {
-    log.info('MONGO_URL not set — running without persistence');
-} else {
-    mongoose.connect(mongoUrl)
-        .then(() => log.info('MongoDB connected'))
-        .catch((err) => log.error('MongoDB connection error', err));
-}
+const { connectDb, getDbStatus } = require('./config/database');
+connectDb();
 
 // --- Geo enrichment (country for each packet) ---
 // Keep this ordering in sync with dashboard/src/utils/geoData.js (COUNTRY_COORDS).
@@ -2041,10 +1943,7 @@ app.get('/api/status', async (req, res) => {
                 verified: auth.verified,
                 ownerEmail: auth.ownerEmail || null,
             },
-            persistence: {
-                mongoUrlConfigured: !!mongoUrl,
-                mongoConnected: mongoose.connection.readyState === 1,
-            },
+            persistence: getDbStatus(),
             ai: {
                 disabled: isAiDisabled(),
                 configured: aiConfigured,
@@ -2056,33 +1955,19 @@ app.get('/api/status', async (req, res) => {
     }
 });
 
+const validate = require('./middleware/validate');
+const { resetMongoSchema } = require('./schemas/adminSchema');
+
 // --- Admin API ---
 // POST /api/admin/reset-mongo
 // DANGER: Deletes all packet history for ALL users.
-app.post('/api/admin/reset-mongo', async (req, res) => {
+app.post('/api/admin/reset-mongo', validate(resetMongoSchema), async (req, res) => {
     try {
         res.set('Cache-Control', 'no-store');
         res.set('Pragma', 'no-cache');
         res.set('Expires', '0');
 
-        // Admin operations require verified JWTs. Without JWKS configured, we cannot
-        // safely validate Clerk-issued tokens.
-        if (!jwksClient) {
-            return res.status(403).json({ error: 'Admin auth not configured: set CLERK_JWKS_URL to enable verified tokens' });
-        }
-
-        const auth = await getAuthContextFromHeaders(req.headers);
-        if (!auth.isAdmin) return res.status(403).json({ error: getAdminNotConfiguredError() });
-
-        // If JWT verification is configured, require verified tokens for destructive admin ops.
-        if (!auth.verified) {
-            return res.status(403).json({ error: 'Admin token must be verified' });
-        }
-
-        const confirm = typeof req.body?.confirm === 'string' ? req.body.confirm.trim() : '';
-        if (confirm !== 'RESET') {
-            return res.status(400).json({ error: 'Confirmation required: set { confirm: "RESET" }' });
-        }
+        const auth = req.auth;
 
         if (!isMongoConnected()) {
             return res.status(400).json({ error: 'MongoDB is not connected (MONGO_URL missing or connection down)' });
@@ -2658,14 +2543,7 @@ app.get('/api/contact', async (req, res) => {
     try {
         const limit = Math.max(1, Math.min(parseInt(req.query.limit || '50', 10), 200));
 
-        // Viewing contact submissions is admin-only.
-        if (!jwksClient) {
-            return res.status(403).json({ error: 'Admin auth not configured: set CLERK_JWKS_URL to enable verified tokens' });
-        }
-
-        const auth = await getAuthContextFromHeaders(req.headers);
-        if (!auth.isAdmin) return res.status(403).json({ error: getAdminNotConfiguredError() });
-        if (!auth.verified) return res.status(403).json({ error: 'Admin token must be verified' });
+        const auth = req.auth;
 
         // If the log file does not exist yet, return empty list.
         const exists = fs.existsSync(CONTACT_LOG_PATH);

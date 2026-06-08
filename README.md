@@ -1,3 +1,4 @@
+
 # TRACEL
 
 TRACEL is a small, event-driven system that simulates “network packets”, optionally scores them with a Python AI service, and streams them live to a SOC-style dashboard.

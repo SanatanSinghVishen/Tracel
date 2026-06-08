@@ -1,40 +1,79 @@
-function normalizeLevel(value) {
-  const v = String(value || '').trim().toLowerCase();
-  if (v === 'debug' || v === 'info' || v === 'warn' || v === 'error') return v;
+const pino = require('pino');
+
+function getMinLevel() {
+  const v = String(process.env.TRACEL_LOG_LEVEL || process.env.LOG_LEVEL || 'info').trim().toLowerCase();
+  if (['debug', 'info', 'warn', 'error'].includes(v)) return v;
   return 'info';
 }
 
-const LEVELS = {
-  debug: 10,
-  info: 20,
-  warn: 30,
-  error: 40,
+const isDev = process.env.NODE_ENV !== 'production';
+
+const pinoOptions = {
+  level: getMinLevel(),
+  formatters: {
+    level: (label) => {
+      return { level: label };
+    },
+  },
+  redact: {
+    paths: [
+      'password',
+      'token',
+      'authorization',
+      'req.headers.authorization',
+      'cookie',
+      'req.headers.cookie'
+    ],
+    censor: '[REDACTED]'
+  }
 };
 
-function getMinLevel() {
-  return normalizeLevel(process.env.TRACEL_LOG_LEVEL || process.env.LOG_LEVEL || 'info');
+let transport;
+if (isDev) {
+  transport = pino.transport({
+    target: 'pino-pretty',
+    options: {
+      colorize: true,
+      translateTime: 'SYS:standard',
+      ignore: 'pid,hostname'
+    }
+  });
 }
 
-function shouldLog(level) {
-  const min = getMinLevel();
-  return LEVELS[level] >= LEVELS[min];
-}
+const pinoLogger = isDev ? pino(pinoOptions, transport) : pino(pinoOptions);
 
-function stamp() {
-  return new Date().toISOString();
-}
-
-function write(method, level, args) {
-  if (!shouldLog(level)) return;
-  // Keep output single-line where possible; let console format objects.
-  method(`[${stamp()}] [${level.toUpperCase()}]`, ...args);
-}
-
+// Keep the old API signature intact for backward compatibility:
+// log.info('message', { meta: 'data' })
+// Note: Pino prefers log.info({ meta: 'data' }, 'message'), but we wrap it to support old usages gracefully
+// if we can't change all call sites. Or we can just export pino directly if call sites are compatible.
+// But to be safe and drop-in, we'll wrap it:
 const log = {
-  debug: (...args) => write(console.debug ? console.debug : console.log, 'debug', args),
-  info: (...args) => write(console.info ? console.info : console.log, 'info', args),
-  warn: (...args) => write(console.warn ? console.warn : console.log, 'warn', args),
-  error: (...args) => write(console.error ? console.error : console.log, 'error', args),
+  debug: (...args) => wrapLog('debug', ...args),
+  info: (...args) => wrapLog('info', ...args),
+  warn: (...args) => wrapLog('warn', ...args),
+  error: (...args) => wrapLog('error', ...args),
+  child: (bindings) => pinoLogger.child(bindings)
 };
+
+function wrapLog(level, ...args) {
+  if (args.length === 0) return;
+  if (args.length === 1) {
+    pinoLogger[level](args[0]);
+    return;
+  }
+  
+  // If first arg is string and second is object, swap them for pino format
+  const first = args[0];
+  const second = args[1];
+  
+  if (typeof first === 'string' && typeof second === 'object' && second !== null) {
+    pinoLogger[level](second, first, ...args.slice(2));
+  } else if (typeof first === 'object' && first !== null && typeof second === 'string') {
+    pinoLogger[level](first, second, ...args.slice(2));
+  } else {
+    // Just pass as is
+    pinoLogger[level](...args);
+  }
+}
 
 module.exports = log;

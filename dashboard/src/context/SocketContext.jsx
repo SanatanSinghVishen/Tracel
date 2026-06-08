@@ -12,6 +12,8 @@ export function SocketProvider({ children }) {
   const [connection, setConnection] = useState({
     connected: socket.connected,
     serverUrl: getServerUrl(),
+    nextReconnect: null,
+    reconnectAttempt: 0,
   });
 
   useEffect(() => {
@@ -61,20 +63,46 @@ export function SocketProvider({ children }) {
   }, [socket, anonId, isLoaded, userId, getToken]);
 
   useEffect(() => {
+    let backoffTimer;
+    let backoffDelay = 1000;
+
     function onConnect() {
-      setConnection((s) => ({ ...s, connected: true }));
+      setConnection((s) => ({ ...s, connected: true, nextReconnect: null, reconnectAttempt: 0 }));
+      backoffDelay = 1000; // Reset backoff on successful connect
     }
 
     function onDisconnect() {
       setConnection((s) => ({ ...s, connected: false }));
     }
 
+    function onConnectError(err) {
+      if (err.message === 'RATE_LIMITED') {
+        console.warn(`Socket connection rate limited. Retrying in ${backoffDelay}ms`);
+        clearTimeout(backoffTimer);
+        const nextTime = Date.now() + backoffDelay;
+        setConnection((s) => ({ ...s, connected: false, nextReconnect: nextTime, reconnectAttempt: s.reconnectAttempt + 1 }));
+        
+        backoffTimer = setTimeout(() => {
+          socket.connect();
+          backoffDelay = Math.min(backoffDelay * 2, 60000); // Exponential backoff up to 60s
+        }, backoffDelay);
+      } else {
+        // Normal socket.io reconnect delay tracking
+        const nextTime = Date.now() + backoffDelay;
+        setConnection((s) => ({ ...s, connected: false, nextReconnect: nextTime, reconnectAttempt: s.reconnectAttempt + 1 }));
+        backoffDelay = Math.min(backoffDelay * 2, 30000);
+      }
+    }
+
     socket.on('connect', onConnect);
     socket.on('disconnect', onDisconnect);
+    socket.on('connect_error', onConnectError);
 
     return () => {
+      clearTimeout(backoffTimer);
       socket.off('connect', onConnect);
       socket.off('disconnect', onDisconnect);
+      socket.off('connect_error', onConnectError);
     };
   }, [socket]);
 

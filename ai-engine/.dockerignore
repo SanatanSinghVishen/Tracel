@@ -11,3 +11,10 @@ venv/
 .gitignore
 .vscode/
 *.log
+tests/
+*.ipynb
+.pytest_cache/
+
+requirements-dev.txt
+*.test.py
+notebooks/
