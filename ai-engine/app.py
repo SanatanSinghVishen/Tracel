@@ -5,7 +5,7 @@ import os
 import time
 import threading
 from datetime import datetime
-from urllib.parse import urlparse, quote_plus, unquote_plus, urlunparse
+from urllib.parse import urlparse, quote, unquote, urlunparse
 
 from dotenv import load_dotenv, dotenv_values
 from inference import predict, reload_model
@@ -165,8 +165,8 @@ def _get_mongo_url() -> str:
         try:
             parsed = urlparse(url)
             if parsed.password or parsed.username:
-                username = quote_plus(unquote_plus(parsed.username)) if parsed.username else ""
-                password = quote_plus(unquote_plus(parsed.password)) if parsed.password else ""
+                username = quote(unquote(parsed.username)) if parsed.username else ""
+                password = quote(unquote(parsed.password)) if parsed.password else ""
                 auth = f"{username}:{password}@" if username or password else ""
                 netloc = f"{auth}{parsed.hostname}" if parsed.hostname else auth
                 if parsed.port:
