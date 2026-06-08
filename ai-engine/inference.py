@@ -125,7 +125,13 @@ def predict(data: dict) -> dict:
     }])
 
     with _model_lock:
-        if _model is None and _model_error is None:
+        # Retry loading if:
+        # 1. Never loaded yet (_model is None and _model_error is None), OR
+        # 2. Previously failed with "not found" but the file now exists (post-retrain recovery)
+        should_load = _model is None and _model_error is None
+        if not should_load and _model is None and _model_error and MODEL_PATH.exists():
+            should_load = True  # model was retrained — clear stale error and reload
+        if should_load:
             _reload_model_unsafe()
             
         m = _model
