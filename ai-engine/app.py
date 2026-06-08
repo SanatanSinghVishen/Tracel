@@ -4,8 +4,12 @@ from pathlib import Path
 import os
 import time
 import threading
+import logging
 from datetime import datetime
 from urllib.parse import urlparse, quote, unquote, urlunparse
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+logger = logging.getLogger(__name__)
 
 from dotenv import load_dotenv, dotenv_values
 from inference import predict, reload_model
@@ -701,6 +705,18 @@ def trigger_retrain():
             app.last_retrain_status = msg
             app.last_retrain_time = datetime.now().isoformat() + "Z"
             logger.info(f"Retrain finished: success={success} msg={msg}")
+        except ValueError as ve:
+            # Not enough data in the requested window — widen to 7 days and retry
+            logger.warning(f"Not enough data in last {hours}h, retrying with 168h window: {ve}")
+            try:
+                success, msg = retrain.run_retrain_job(since_hours=168)
+                app.last_retrain_status = msg
+                app.last_retrain_time = datetime.now().isoformat() + "Z"
+                logger.info(f"Retrain (168h retry) finished: success={success} msg={msg}")
+            except Exception as e2:
+                app.last_retrain_status = str(e2)
+                app.last_retrain_time = datetime.now().isoformat() + "Z"
+                logger.error(f"Retrain (168h retry) failed: {e2}")
         except Exception as e:
             app.last_retrain_status = str(e)
             app.last_retrain_time = datetime.now().isoformat() + "Z"
