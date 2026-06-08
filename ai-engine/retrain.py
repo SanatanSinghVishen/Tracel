@@ -36,8 +36,10 @@ def fetch_training_data(since_hours: int, min_samples: int = 1000):
     logger.info(f"Fetching packets from {since} to {now}...")
     
     # We want regular packets (or both, but Isolation Forest works best on majority-normal traffic)
+    # Exclude packets with high_entropy=true since they are simulated attacks or anomalies
     cursor = coll.find({
-        "timestamp": {"$gte": since, "$lt": now}
+        "timestamp": {"$gte": since, "$lt": now},
+        "high_entropy": {"$ne": True}
     }, {"_id": 0, "bytes": 1, "protocol": 1, "entropy": 1, "dst_port": 1, "port": 1})
     
     df = pd.DataFrame(list(cursor))
