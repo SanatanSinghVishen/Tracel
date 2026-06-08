@@ -89,6 +89,59 @@ def handle_reload_model():
     else:
         return jsonify({"ok": False, "error": msg}), 500
 
+@app.route('/debug/db', methods=['GET'])
+def debug_db():
+    """Diagnostic endpoint: shows which MongoDB database/collection is visible to the AI engine."""
+    try:
+        mongo_url = _get_mongo_url()
+        db_name_env = _get_mongo_db_name()
+
+        # Sanitize URL for display (hide credentials)
+        safe_url = "not set"
+        if mongo_url:
+            try:
+                from urllib.parse import urlparse
+                p = urlparse(mongo_url)
+                safe_url = f"{p.scheme}://***@{p.hostname}{p.path}"
+            except Exception:
+                safe_url = mongo_url[:20] + "..."
+
+        if not mongo_url:
+            return jsonify({"error": "MONGO_URL not set", "safe_url": safe_url}), 503
+
+        client = MongoClient(mongo_url, serverSelectionTimeoutMS=5000,
+                             connectTimeoutMS=5000, socketTimeoutMS=5000)
+
+        result = {
+            "safe_url": safe_url,
+            "MONGO_DB_NAME_env": db_name_env or "(not set)",
+            "databases": [],
+        }
+
+        try:
+            dbs = client.list_database_names()
+            result["databases"] = dbs
+        except Exception as e:
+            result["databases_error"] = str(e)
+
+        # Check packets collection in each DB
+        collections_info = {}
+        for db_name in (result.get("databases") or []):
+            try:
+                db = client[db_name]
+                colls = db.list_collection_names()
+                pkt_count = 0
+                if "packets" in colls:
+                    pkt_count = db["packets"].estimated_document_count()
+                collections_info[db_name] = {"collections": colls, "packets_count": pkt_count}
+            except Exception as e:
+                collections_info[db_name] = {"error": str(e)}
+
+        result["collections_by_db"] = collections_info
+        return jsonify(result), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/health', methods=['GET'])
 def health():
     import inference
