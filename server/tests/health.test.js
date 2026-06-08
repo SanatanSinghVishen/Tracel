@@ -7,7 +7,10 @@ jest.mock('ioredis', () => {
         return {
             status: 'ready',
             connect: jest.fn().mockResolvedValue(),
-            ping: jest.fn().mockResolvedValue('PONG')
+            ping: jest.fn().mockResolvedValue('PONG'),
+            brpop: jest.fn().mockReturnValue(new Promise(() => {})), // Never resolves
+            lpush: jest.fn().mockResolvedValue(1),
+            on: jest.fn()
         };
     });
 });
