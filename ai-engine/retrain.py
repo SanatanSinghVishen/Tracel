@@ -114,17 +114,22 @@ def run_retrain_job(since_hours: int = 24):
         
         clf = process_and_train(df)
         
+        # Derive model directory from the same MODEL_PATH env var that inference.py reads.
+        # Default to /tmp/model/model.pkl which is always writable on Railway.
+        model_path_env = os.getenv("MODEL_PATH", str(Path("/tmp/model/model.pkl")))
+        model_pkl = Path(model_path_env)
+        model_dir = model_pkl.parent
+        model_dir.mkdir(parents=True, exist_ok=True)
+
         # Versioning
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         versioned_filename = f"model_{timestamp}.pkl"
-        model_dir = BASE_DIR / "model"
-        model_dir.mkdir(exist_ok=True)
         versioned_path = model_dir / versioned_filename
         
         logger.info(f"Saving model to {versioned_path}...")
         joblib.dump(clf, versioned_path)
         
-        # Update symlink or overwrite model.pkl
+        # Overwrite/symlink model.pkl so inference.py can pick it up
         symlink_path = model_dir / "model.pkl"
         if os.name == 'nt':
             # Symlinks on Windows require admin privileges, so we'll just copy/overwrite
