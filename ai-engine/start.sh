@@ -1,12 +1,16 @@
 #!/bin/bash
 
-# Ensure model directory exists (Railway volume may be empty on first mount)
+# Ensure model directory exists
 mkdir -p /app/model
 
-# Start the Redis worker in the background
-echo "Starting AI Engine Queue Worker..."
-python worker.py &
+# Fix permissions on the Railway persistent volume
+# (This runs as root because we haven't dropped privileges yet)
+chown -R appuser:appgroup /app/model
 
-# Start the Web API (Gunicorn) in the foreground
+# Start the Redis worker in the background as appuser
+echo "Starting AI Engine Queue Worker..."
+gosu appuser python worker.py &
+
+# Start the Web API (Gunicorn) in the foreground as appuser
 echo "Starting Gunicorn Web Server..."
-gunicorn app:app --config gunicorn.conf.py
+exec gosu appuser gunicorn app:app --config gunicorn.conf.py

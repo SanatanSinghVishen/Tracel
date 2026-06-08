@@ -35,14 +35,18 @@ COPY --from=builder /install /usr/local
 RUN groupadd -g 1000 appgroup && \
     useradd -m -u 1000 -g appgroup appuser
 
-# Create model directory and assign ownership BEFORE switching users
-RUN mkdir -p /app/model && chown -R appuser:appgroup /app/model
+# Install gosu for secure privilege dropping
+RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf /var/lib/apt/lists/*
+
+# Create model directory (ownership will be fixed at runtime by start.sh)
+RUN mkdir -p /app/model
 
 # Copy application source code with explicit ownership
 COPY --chown=appuser:appgroup inference.py app.py worker.py retrain.py mitre_tagger.py mitre_techniques.py gunicorn.conf.py start.sh ./
 RUN chmod +x start.sh
 
-USER appuser
+# We MUST remain root in the Dockerfile so start.sh can chown the Railway volume.
+# start.sh will use gosu to securely drop privileges to appuser before running the app.
 
 EXPOSE 5000
 
