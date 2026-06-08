@@ -160,8 +160,9 @@ def predict(data: dict) -> dict:
         
     is_anomaly = raw_score < 0
     explanation = None
+    mitre = None
 
-    if is_anomaly and explainer is not None:
+    if explainer is not None:
         try:
             shap_values = explainer.shap_values(X_eval)[0]
             feature_names = X_eval.columns.tolist()
@@ -179,14 +180,29 @@ def predict(data: dict) -> dict:
             
             contributions.sort(key=lambda x: abs(x["shap_value"]), reverse=True)
             explanation = contributions[:SHAP_TOP_N]
+            
+            # Simple heuristic MITRE mapping based on highest SHAP feature and raw values
+            top_feature = explanation[0]["feature"] if explanation else "unknown"
+            if top_feature == "dst_port" and dst_port in [22, 3389, 21, 23]:
+                mitre = { "technique_id": "T1110", "technique_name": "Brute Force", "tactic": "Credential Access", "confidence": "high" }
+            elif top_feature == "entropy" and entropy > 0.7:
+                mitre = { "technique_id": "T1486", "technique_name": "Data Encrypted for Impact", "tactic": "Impact", "confidence": "high" }
+            elif protocol_index == 5: # ICMP
+                mitre = { "technique_id": "T1046", "technique_name": "Network Service Scanning", "tactic": "Discovery", "confidence": "medium" }
+            elif packet_bytes > 5000:
+                mitre = { "technique_id": "T1048", "technique_name": "Exfiltration Over Alternative Protocol", "tactic": "Exfiltration", "confidence": "medium" }
+            else:
+                mitre = { "technique_id": "T1190", "technique_name": "Exploit Public-Facing Application", "tactic": "Initial Access", "confidence": "low" }
         except Exception as e:
             logger.error(f"SHAP explanation failed: {e}")
             explanation = None
+            mitre = None
 
     return {
         "anomaly_score": clamped_score,
         "is_anomaly": is_anomaly,
         "raw_score": raw_score,
         "explanation": explanation,
+        "mitre": mitre,
         "id": packet_id,
     }
