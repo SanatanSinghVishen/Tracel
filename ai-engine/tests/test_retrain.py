@@ -31,11 +31,12 @@ def test_retrain_insufficient_data(mock_get_coll):
     mock_coll = MagicMock()
     mock_get_coll.return_value = (mock_coll, None)
     
-    # Only 10 samples, needs 500
+    # Only 10 samples, needs 500 (enforce via env var so the threshold is exercised)
     mock_data = [{'bytes': 100, 'protocol': 'TCP', 'entropy': 0.1, 'dst_port': 80}] * 10
     mock_coll.find.return_value = mock_data
     
-    success, msg = retrain.run_retrain_job(since_hours=24)
+    with patch.dict('os.environ', {'RETRAIN_MIN_SAMPLES': '500'}):
+        success, msg = retrain.run_retrain_job(since_hours=24)
     
     assert success is False
     assert "Not enough data" in msg
