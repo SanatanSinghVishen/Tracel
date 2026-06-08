@@ -60,6 +60,13 @@ def fetch_training_data(since_hours: int, min_samples: int = 1000):
         df = pd.DataFrame(list(cursor))
         logger.info(f"Pass 3 (all traffic, 168h): {len(df)} samples")
 
+    # Pass 4: Timestamps may be stored as strings — drop the filter entirely
+    if len(df) < min_samples:
+        logger.warning(f"Timestamp filter returned 0 (possible string/date type mismatch). Fetching all documents...")
+        cursor = coll.find({}, projection)
+        df = pd.DataFrame(list(cursor))
+        logger.info(f"Pass 4 (no timestamp filter, all docs): {len(df)} samples")
+
     if len(df) < min_samples:
         raise ValueError(f"Not enough data to retrain: found {len(df)} samples, need at least {min_samples}.")
 
