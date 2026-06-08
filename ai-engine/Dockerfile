@@ -38,12 +38,12 @@ RUN useradd -m -u 1000 tracel
 RUN mkdir -p /app/model && chown -R tracel:tracel /app/model
 
 # Copy application source code
-COPY inference.py app.py worker.py retrain.py mitre_tagger.py mitre_techniques.py gunicorn.conf.py ./
-RUN chown -R tracel:tracel /app/model
+COPY inference.py app.py worker.py retrain.py mitre_tagger.py mitre_techniques.py gunicorn.conf.py start.sh ./
+RUN chown -R tracel:tracel /app/model && chmod +x start.sh
 
 USER tracel
 
 EXPOSE 5000
 
-# Serve Flask app via gunicorn using our config
-CMD ["gunicorn", "app:app", "--config", "gunicorn.conf.py"]
+# Serve both Web API and Worker in one container for Railway
+CMD ["./start.sh"]
