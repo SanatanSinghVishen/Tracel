@@ -543,9 +543,9 @@ export default function Forensics() {
   // Auto-generate once when the Forensics page loads so the collapsed preview isn't empty.
   useEffect(() => {
     if (!isLoaded) return;
-    if (intelLoaded || intelLoading) return;
+    if (intelLoaded || intelLoading || intelError) return;
     loadThreatIntel();
-  }, [isLoaded, intelLoaded, intelLoading, loadThreatIntel]);
+  }, [isLoaded, intelLoaded, intelLoading, intelError, loadThreatIntel]);
 
   const intelLastAttackLabel = useMemo(() => {
     if (!intelLoaded || intelLoading) return '—';
