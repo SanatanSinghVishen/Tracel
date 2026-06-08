@@ -188,7 +188,12 @@ def _get_packets_collection():
     if not mongo_url:
         return None, 'MONGO_URL not set for ai-engine'
 
-    client = MongoClient(mongo_url, serverSelectionTimeoutMS=1500)
+    client = MongoClient(
+        mongo_url, 
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        socketTimeoutMS=5000
+    )
 
     # Prefer default DB from connection string, else explicit env var, else fallback.
     db = None
