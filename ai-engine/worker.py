@@ -106,6 +106,19 @@ def main():
                 "mitre": mitre_tag,
             }))
             
+        except RuntimeError as e:
+            if "Model not loaded" in str(e):
+                # Model not ready yet (fresh deploy) — push item back and wait
+                print(f"[Worker] Model not ready, re-queuing item and backing off 5s...")
+                try:
+                    r.rpush('tracel:ai:queue', data_json)
+                except Exception:
+                    pass
+                time.sleep(5)
+            else:
+                print(f"Worker error: {e}")
+                traceback.print_exc()
+                time.sleep(1)
         except Exception as e:
             print(f"Worker error: {e}")
             traceback.print_exc()
