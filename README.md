@@ -1,320 +1,417 @@
+<div align="center">
 
-# TRACEL
+# Tracel
 
-TRACEL is a small, event-driven system that simulates “network packets”, optionally scores them with a Python AI service, and streams them live to a SOC-style dashboard.
+**Real-time SOC dashboard simulator with AI-powered anomaly detection**
 
-It’s organized as three apps:
+[![Tests](https://img.shields.io/github/actions/workflow/status/yourname/tracel/test.yml?label=tests&style=flat-square)](https://github.com/yourname/tracel/actions)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
+[![Node](https://img.shields.io/badge/node-18+-green?style=flat-square)](https://nodejs.org)
+[![Python](https://img.shields.io/badge/python-3.11-blue?style=flat-square)](https://python.org)
 
-- `dashboard/` (React + Vite + Tailwind): the UI.
-- `server/` (Node + Express + Socket.IO): traffic simulation + APIs + realtime streaming.
-- `ai-engine/` (Python): the `/predict` endpoint used by the simulator (optional).
+Tracel simulates network packet traffic, scores each packet in real time using a trained Isolation Forest model, and streams the results — with SHAP feature explanations and MITRE ATT&CK technique tags — to a live React dashboard.
 
-## Quick Start (recommended)
+[Live Demo](https://tracel.vercel.app) · [Architecture](#architecture) · [Quick Start](#quick-start) · [API Reference](#api-reference)
 
-This repo includes a root starter so you don’t have to open two terminals manually.
+</div>
 
-1. Install dependencies for dashboard + server:
+---
+
+## What it does
+
+A Security Operations Center analyst watching Tracel sees:
+
+- A **live packet feed** streaming simulated network events as they are generated
+- An **anomaly score** (0–1) for each packet, produced by an Isolation Forest model
+- A **SHAP explanation** on flagged packets — the top 3 features that drove the anomaly score (e.g. `dst_port +0.43 · bytes +0.29`)
+- A **MITRE ATT&CK badge** classifying the attack technique (e.g. `T1046 · Discovery · high`)
+- A **globe visualization** plotting source and destination IPs geographically
+- A **forensic view** for querying historical threat logs
+
+The system is designed to survive partial outages — if the AI engine goes down, packets continue flowing with safe default scores. If MongoDB drops, the system falls back to an in-memory store. If Redis is unavailable, the queue falls back to direct HTTP.
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     React Frontend                          │
+│         Vite · Tailwind · socket.io-client · recharts       │
+│              react-globe.gl · ConnectionStatusBanner        │
+└────────────────────────┬────────────────────────────────────┘
+                         │ WebSocket (socket.io)
+                         │ REST (auth, config, forensics)
+┌────────────────────────▼────────────────────────────────────┐
+│                  Node.js Backend                            │
+│     Express · Socket.IO · Zod · Pino · @clerk/backend       │
+│     traffic_simulator.js → Redis queue → result worker      │
+│     MongoDB (optional) │ memory_store.js fallback           │
+└──────────┬─────────────────────────┬───────────────────────┘
+           │ tracel:ai:queue         │ tracel:ai:results
+           │ (Redis pub/sub)         │ (Redis pub/sub)
+┌──────────▼──────────┐   ┌─────────▼────────────────────────┐
+│   Python AI Engine  │   │       Python AI Worker            │
+│   Flask · Gunicorn  │   │  worker.py · inference.py         │
+│   /health · /predict│   │  mitre_tagger.py · retrain.py     │
+│   APScheduler       │   │  Health server :9090              │
+└──────────┬──────────┘   └──────────────────────────────────┘
+           │
+┌──────────▼──────────┐
+│   inference.py      │  ← single source of truth for the model
+│   IsolationForest   │     shared by Flask + worker
+│   TreeExplainer     │     hot-reloadable via reload_model()
+│   reload_model()    │
+└─────────────────────┘
+```
+
+### Data flow — one packet, start to finish
+
+```
+1. traffic_simulator.js  →  generates mock packet
+2. Node                  →  enqueues to tracel:ai:queue (Redis)
+3. worker.py             →  dequeues, calls predict() from inference.py
+4. inference.py          →  IsolationForest score + SHAP explanation
+5. mitre_tagger.py       →  maps features to MITRE ATT&CK technique
+6. worker.py             →  pushes result to tracel:ai:results (Redis)
+7. Node result worker    →  Zod-validates result, dead-letters if invalid
+8. Node                  →  persists to MongoDB (or memory_store.js)
+9. Node                  →  broadcasts via Socket.IO to all React clients
+10. React dashboard      →  renders packet, ExplanationBadge, MitreBadge
+```
+
+### Graceful degradation
+
+| Dependency | Fallback |
+|---|---|
+| Redis unavailable | Node falls back to synchronous `POST /predict` HTTP call |
+| AI engine down | Node assigns safe default anomaly score, stream continues |
+| MongoDB unreachable | Falls back to `memory_store.js` (LRU, max 1000 entries, 30 min TTL) |
+| SHAP computation fails | `explanation: null` returned, prediction still completes |
+| Socket.IO Redis adapter fails | Falls back to single-instance in-memory adapter |
+| WebSocket disconnects | Client applies exponential backoff (1s base, 30s cap, ±50% jitter) |
+
+---
+
+## Quick start
+
+### Prerequisites
+
+- Node.js 18+
+- Python 3.11+
+- Docker + Docker Compose
+- A [Clerk](https://clerk.com) account (free tier is fine)
+
+### 1. Clone and configure
 
 ```bash
-npm run install:all
+git clone https://github.com/yourname/tracel.git
+cd tracel
+cp server/.env.example server/.env
+cp ai-engine/.env.example ai-engine/.env
+cp dashboard/.env.example dashboard/.env
 ```
 
-2. Start dashboard + server together:
+Fill in the required values in each `.env`:
 
 ```bash
-npm run dev
-```
+# server/.env — required
+VITE_CLERK_PUBLISHABLE_KEY=pk_test_...
+CLERK_SECRET_KEY=sk_test_...
+FRONTEND_URL=http://localhost:5173
 
-If you want AI scoring locally (recommended for full feature parity), start all three apps:
-
-```bash
-npm run dev:full
-```
-
-Notes for AI engine:
-
-- Requires Python 3.10+ and the AI deps installed:
-  - `python -m pip install -r ai-engine/requirements.txt`
-- The server is already configured (via `server/.env`) to call `http://127.0.0.1:5000/predict`.
-
-3. Open the dashboard:
-
-- `http://localhost:5173/` (Vite will use another port if busy)
-
-### Default Ports
-
-- Dashboard (Vite): `http://localhost:5173/`
-- Server (Express + Socket.IO): `http://localhost:3001/`
-- AI engine (optional): `http://127.0.0.1:5000/`
-
-## What Runs Where
-
-### Dashboard (`dashboard/`)
-
-- Live views: globe, charts, forensics, settings, etc.
-- Connects to the server using Socket.IO.
-- Uses Clerk on the frontend (publishable key is required for auth flows).
-
-### Server (`server/`)
-
-- Optional MongoDB persistence (it will still work without Mongo).
-
-### AI Engine (`ai-engine/`) (optional)
-
-- Exposes `POST /predict` used by the simulator.
-- If it’s not running, the server will still stream packets, but AI scoring will be degraded (safe defaults).
-
-## Repository Layout
-
-- `dashboard/`
-  - `src/` – React app
-  - `.env.example` – environment template
-- `server/`
-  - `index.js` – Express/Socket.IO app
-  - `traffic_simulator.js` – traffic generator + AI call
-  - `.env.example` – environment template
-- `ai-engine/`
-  - `train_model.py` – trains and writes `model.pkl`
-  - `app.py` – Python API
-  - `requirements.txt`
-
-## Setup: Environment Variables
-
-### Dashboard env (`dashboard/.env.local` recommended)
-
-```env
-VITE_SERVER_URL=http://localhost:3001
-VITE_CLERK_PUBLISHABLE_KEY=pk_...
-VITE_ADMIN_EMAIL=admin@example.com
-```
-
-- `VITE_SERVER_URL` must match the server port.
-- `VITE_ADMIN_EMAIL` is a simple UI-side admin toggle (used to hide/show admin-only UI).
-- Clerk keys:
-  - Local dev typically uses `pk_test_...`.
-  - Production deployments must use `pk_live_...`.
-
-### Dashboard production env (for deployment)
-
-Use hosting provider environment variables, or create a local production build file:
-
-- Template: `dashboard/.env.production.example`
-- Local prod build file: `dashboard/.env.production`
-
-### Server env (`server/.env`)
-
-```env
+# Optional — omit to run without persistence
 MONGO_URL=mongodb://localhost:27017/tracel
-AI_PREDICT_URL=http://127.0.0.1:5000/predict
 
-# Attack-mode tuning (0.0–1.0). Higher => more malicious packets during Attack Mode.
-# Default (if unset): 0.6
-ATTACK_MALICIOUS_RATIO=0.6
-
-GROQ_API_KEY=...
-GROQ_MODEL=llama-3.1-8b-instant
-
-ADMIN_EMAIL=admin@example.com
-ADMIN_USER_ID=
-
-CLERK_JWKS_URL=
-
-TRACEL_LOG_LEVEL=info
-PORT=3001
+# Optional — omit to run without async queue (falls back to HTTP)
+REDIS_URL=redis://localhost:6379
 ```
 
-Notes:
-
-- If `MONGO_URL` is missing, the server runs “memory-only” (no persistence) but the dashboard still works.
-- `ADMIN_EMAIL`/`ADMIN_USER_ID` controls server-side admin-only endpoints.
-- If `CLERK_JWKS_URL` is set, the server verifies Clerk JWTs from `Authorization: Bearer <token>`.
-- `TRACEL_LOG_LEVEL` can be `debug`, `info`, `warn`, or `error`.
-
-## Deployment checklist (Clerk)
-
-- Dashboard: set `VITE_CLERK_PUBLISHABLE_KEY=pk_live_...` in production.
-- Dashboard: set `VITE_SERVER_URL` to your deployed server origin.
-- Server: set `CLERK_JWKS_URL` to your Clerk production instance JWKS/well-known URL.
-- Avoid deploying with Clerk development keys (`pk_test_...`) due to strict usage limits: https://clerk.com/docs/deployments/overview
-
-### AI engine env (`ai-engine/`)
-
-The AI engine runs with Python + `requirements.txt`. It reads `model.pkl` (generated by training).
-
-Health check:
-
-- `GET http://127.0.0.1:5000/health` — service up (model may load lazily)
-- `GET http://127.0.0.1:5000/health?load=1` — forces model load and returns model metadata (threshold, path)
-
-## Deploying AI Engine off Render (Option C)
-
-If Render/Cloudflare rate-limiting blocks backend → AI calls, deploy `ai-engine/` somewhere else (container-based) and point the backend to it.
-
-### Build & run locally (Docker)
-
-From repo root:
+### 2. Run with Docker Compose (recommended)
 
 ```bash
-docker build -t tracel-ai ./ai-engine
-docker run --rm -p 5000:5000 -e PORT=5000 tracel-ai
+docker compose up
 ```
 
-Verify:
+This starts four services: `server`, `ai-engine`, `ai-worker`, and `redis`.
+MongoDB is not included — set `MONGO_URL` to an Atlas connection string or omit it to use the in-memory store.
 
-- `http://127.0.0.1:5000/` returns `{ ok: true, service: "ai-engine", ... }`
-- `http://127.0.0.1:5000/health` returns `{ status: "running" }`
-
-### Backend configuration
-
-Set the server env var to the new AI base URL (include scheme):
-
-```env
-AI_SERVICE_URL=https://<your-ai-host>
-```
-
-Examples:
-
-- Fly.io: `AI_SERVICE_URL=https://tracel-ai.fly.dev`
-- Railway: `AI_SERVICE_URL=https://tracel-ai-production.up.railway.app`
-- Azure Container Apps: `AI_SERVICE_URL=https://tracel-ai.<region>.azurecontainerapps.io`
-
-After deploy, verify from backend:
-
-- `GET /api/ai/status?probe=1` should show `probe.root.status: 200` and `okSignature: true`.
-
-## Running Each App Separately (manual)
-
-### 1) Server
+### 3. Run without Docker
 
 ```bash
-cd server
-npm install
-npm run dev
-```
+# Terminal 1 — Node backend
+cd server && npm install && npm run dev
 
-Server: `http://localhost:3001/`
-
-### 2) Dashboard
-
-```bash
-cd dashboard
-npm install
-npm run dev
-```
-
-Dashboard: `http://localhost:5173/`
-
-### 3) AI engine (optional)
-
-```bash
-cd ai-engine
-
-python -m venv venv
-
-# PowerShell
-./venv/Scripts/Activate.ps1
-
-pip install -r requirements.txt
-
-# train once (creates/updates model.pkl)
-python train_model.py
-
+# Terminal 2 — Python AI engine
+cd ai-engine && pip install -r requirements-dev.txt
 python app.py
+
+# Terminal 3 — Python AI worker
+cd ai-engine && python worker.py
+
+# Terminal 4 — React frontend
+cd dashboard && npm install && npm run dev
 ```
 
-AI engine: `http://127.0.0.1:5000/`
+Open [http://localhost:5173](http://localhost:5173).
 
-## Root Scripts
+---
 
-From the repo root:
+## Tech stack
 
-- `npm run install:all` — installs dashboard + server deps.
-- `npm run dev` — runs dashboard + server together.
-- `npm run dev:dashboard` — dashboard only.
-- `npm run dev:server` — server only.
-- `npm run lint` — dashboard ESLint.
-- `npm run build` — dashboard production build.
+### Frontend
+| | |
+|---|---|
+| Framework | React 18 + Vite |
+| Styling | Tailwind CSS |
+| Routing | react-router-dom |
+| Real-time | socket.io-client |
+| Visualisation | recharts, react-globe.gl, three.js |
+| Auth | Clerk (JWT, client-side) |
 
-## VS Code Tasks
+### Backend (Node.js)
+| | |
+|---|---|
+| Server | Express + Socket.IO |
+| Auth | Clerk JWTs via jwks-rsa |
+| Validation | Zod |
+| Logging | Pino (JSON) + pino-pretty (dev) |
+| Queue | ioredis (producer + result worker) |
+| Database | Mongoose (MongoDB) + memory_store.js fallback |
+| Rate limiting | express-rate-limit + custom io.use() socket throttle |
+| Scaling | @socket.io/redis-adapter |
 
-Use “Run Task” in VS Code:
+### AI Engine (Python)
+| | |
+|---|---|
+| Server | Flask + Gunicorn |
+| Model | scikit-learn IsolationForest |
+| Explainability | SHAP TreeExplainer |
+| Attack tagging | Custom MITRE ATT&CK rule engine |
+| Queue consumer | redis-py |
+| Scheduling | APScheduler (periodic model retraining) |
+| Serialisation | joblib, pandas |
 
-- `dev: all`
-- `dev: dashboard`
-- `dev: server`
+---
 
-## Troubleshooting
+## Key design decisions
 
-### “Port already in use” (EADDRINUSE)
+### Why Node.js + Python instead of one language?
 
-- Server uses port `3001` (configurable via `PORT`).
-- Dashboard uses port `5173` (Vite will automatically pick `5174`, `5175`, etc.).
+Node.js has the best real-time WebSocket ecosystem. Python has the best ML ecosystem. Running them as separate services means each can use its ideal runtime. The cost is network latency between them and two deployment environments to maintain.
 
-On Windows PowerShell you can find and kill by port:
+The original implementation made a synchronous `POST /predict` HTTP call per packet — a hard throughput ceiling. This was replaced with a Redis async queue: Node enqueues packets and immediately moves on, the Python worker processes them independently. Both services now scale horizontally without coupling.
 
-```powershell
-Get-NetTCPConnection -LocalPort 3001 | Select-Object -ExpandProperty OwningProcess -Unique
-Stop-Process -Id <PID> -Force
-```
+### Why is MongoDB optional?
 
-### Dashboard shows “no data” / not connecting
+New contributors should be able to run the full system with a single command and no external dependencies. If `MONGO_URL` is not set, all packet and threat data is stored in `memory_store.js` — an LRU-evicting, TTL-aware in-memory store. The cost is that data disappears on server restart. For development this is acceptable; for production, set `MONGO_URL`.
 
-- Confirm the server is running.
-- Confirm `VITE_SERVER_URL` matches the server URL and port.
-- Check the browser console and the server terminal output.
+### Why Clerk instead of rolling auth?
 
-### Clerk: “Failed to load Clerk” / `failed_to_load_clerk_js_timeout`
+Writing correct authentication means correctly implementing JWT signing, refresh token rotation, JWKS endpoint verification, and session invalidation. Clerk solves all of these. The backend receives a JWT, verifies it against Clerk's JWKS endpoint, and extracts the role from the token claims — zero passwords stored, zero custom crypto.
 
-If the browser can’t load `clerk.browser.js` (often due to network filtering of `*.clerk.accounts.dev`), Clerk auth flows will fail.
+### Why SHAP + MITRE instead of just an anomaly score?
 
-- First, try a hard refresh and check DevTools → Network for the failed script request.
-- Workaround: set `VITE_CLERK_JS_URL` to an alternate hosted copy of Clerk JS.
-  - Example: `https://cdn.jsdelivr.net/npm/@clerk/clerk-js@5/dist/clerk.browser.js`
-  - Put it in `dashboard/.env.local` (dev) or your hosting env vars (prod).
+An anomaly score is a black box. A SOC analyst seeing `anomaly_score: 0.87` with no context cannot decide whether to escalate or dismiss. SHAP TreeExplainer adds feature attribution ("flagged because dst_port contributed +0.43") and the MITRE tagger adds attack context ("this pattern matches T1046 Network Service Discovery, confidence: high"). Together they make the anomaly actionable.
 
-### MongoDB errors
+---
 
-- If you don’t want Mongo at all, remove `MONGO_URL` from `server/.env`.
-- If using MongoDB Atlas, ensure your IP is whitelisted and credentials are correct.
+## API reference
 
-## Validation: Attack Mode realism
+### Node backend (`/api`)
 
-There’s a small validator script that toggles Attack Mode and measures anomaly rates.
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | None | Service health — Redis, MongoDB, AI engine status |
+| `GET` | `/health/socket` | None | Socket.IO adapter type, connected client count |
+| `GET` | `/api/status` | JWT | Current simulator status |
+| `POST` | `/api/settings` | JWT | Update simulator configuration |
+| `GET` | `/api/forensics` | JWT | Query historical threat logs (paginated) |
+| `POST` | `/api/admin/reset` | JWT + Admin | Reset the packet stream |
+
+### AI engine (`/`)
+
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | None | Model status, SHAP explainer state, uptime |
+| `POST` | `/predict` | Internal | Score a packet (used as HTTP fallback only) |
+| `GET` | `/admin/model-status` | Internal | Last retrain time, next scheduled retrain |
+| `POST` | `/admin/reload-model` | Internal | Hot-reload model without restart |
+
+### AI worker (`:9090`)
+
+| Method | Route | Auth | Description |
+|---|---|---|---|
+| `GET` | `/health` | None | Redis connectivity, queue depth, dead-letter count |
+
+---
+
+## Environment variables
+
+### server/.env
 
 ```bash
-node server/tools/validate_attack_mode.js qa-sim
+# Auth (required)
+VITE_CLERK_PUBLISHABLE_KEY=
+CLERK_SECRET_KEY=
+
+# CORS (required in production)
+FRONTEND_URL=https://your-frontend.vercel.app
+
+# Database (optional — falls back to memory store)
+MONGO_URL=
+MONGO_POOL_SIZE=10
+
+# Redis (optional — falls back to synchronous HTTP)
+REDIS_URL=
+
+# Socket.IO scaling
+SOCKET_IO_REDIS_PREFIX=tracel:sio
+
+# Rate limiting
+RATE_LIMIT_WINDOW_MS=900000
+RATE_LIMIT_MAX_HTTP=200
+RATE_LIMIT_MAX_ADMIN=20
+SOCKET_MAX_CONNECTIONS_PER_WINDOW=10
+SOCKET_WINDOW_MS=60000
+
+# Memory store fallback
+MEMORY_STORE_MAX_SIZE=1000
+MEMORY_STORE_TTL_MINUTES=30
+
+# Logging
+TRACEL_LOG_LEVEL=info          # debug | info | warn | error
+NODE_ENV=production
 ```
 
-Useful env vars for the validator (optional):
-
-- `AI_URL` (default `http://127.0.0.1:5000`) — AI engine base URL
-- `SAMPLE_SECONDS_ON`, `SAMPLE_SECONDS_OFF` — how long to sample each phase
-- `MIN_PACKETS_ON`, `MIN_PACKETS_OFF` — minimum packets to collect per phase
-- `MAX_WAIT_SECONDS_ON`, `MAX_WAIT_SECONDS_OFF` — maximum wait for min packets
-- `SETTLE_MS` — delay after toggling before starting the measurement window
-
-Example (more stable OFF baseline):
-
-```powershell
-$env:SAMPLE_SECONDS_ON=10
-$env:MIN_PACKETS_ON=80
-$env:MAX_WAIT_SECONDS_ON=40
-$env:SAMPLE_SECONDS_OFF=240
-$env:MIN_PACKETS_OFF=120
-$env:MAX_WAIT_SECONDS_OFF=720
-$env:SETTLE_MS=800
-node server/tools/validate_attack_mode.js qa-sim
-```
-
-### AI engine offline
-
-- If `AI_PREDICT_URL` points to a non-running service, the server still streams packets, but AI scoring is reduced.
-
-## Clean Reset (common)
-
-If you deleted `node_modules` or dependencies got corrupted:
+### ai-engine/.env
 
 ```bash
-npm run install:all
-npm run dev
+# Model paths
+MODEL_PATH=model/isolation_forest_latest.pkl
+SCALER_PATH=model/scaler.pkl
+
+# SHAP
+SHAP_TOP_N=3
+SHAP_MIN_VALUE=0.05
+
+# Retraining
+RETRAIN_INTERVAL_HOURS=24
+RETRAIN_MIN_SAMPLES=500
+
+# Redis
+REDIS_URL=
+
+# MongoDB (for retraining data source)
+MONGO_URL=
+
+# Performance
+GUNICORN_WORKERS=4
+AI_SLOW_REQUEST_MS=500
 ```
+
+---
+
+## Running tests
+
+```bash
+# Node — Jest
+cd server && npm test
+
+# Python — Pytest
+cd ai-engine && pip install -r requirements-dev.txt && pytest
+
+# Both via CI
+# See .github/workflows/test.yml — runs on every push to main
+```
+
+Test coverage includes: packet validation, auth middleware, socket throttle (including IPv4/IPv6 x-forwarded-for parsing), SHAP failure fallback, MITRE rule priority ordering, model hot-reload under concurrent load, memory store LRU eviction, and database graceful degradation.
+
+---
+
+## Deployment
+
+### Frontend → Vercel
+
+```bash
+cd dashboard && vercel --prod
+```
+
+Set `VITE_CLERK_PUBLISHABLE_KEY` and `VITE_BACKEND_URL` in the Vercel dashboard.
+
+### Backend + AI → Fly.io
+
+```bash
+# Node backend
+cd server && fly launch && fly deploy
+
+# AI engine + worker (same image, different process)
+cd ai-engine && fly launch && fly deploy
+```
+
+Set all environment variables via `fly secrets set KEY=value`.
+
+Health checks are configured in `docker-compose.yml` and will be picked up automatically by Fly.io.
+
+---
+
+## Project structure
+
+```
+tracel/
+├── dashboard/                  # React frontend
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── ConnectionStatusBanner.jsx
+│   │   │   ├── ExplanationBadge.jsx     # SHAP feature breakdown
+│   │   │   ├── FreshnessGuard.jsx       # Stale data overlay
+│   │   │   └── MitreBadge.jsx           # ATT&CK technique badge
+│   │   ├── context/
+│   │   │   └── SocketContext.jsx
+│   │   └── hooks/
+│   │       ├── useConnectionStatus.js
+│   │       └── useDataFreshness.js
+│
+├── server/                     # Node.js backend
+│   ├── config/
+│   │   ├── cors.js
+│   │   ├── database.js
+│   │   └── logger.js           # Pino JSON logger
+│   ├── middleware/
+│   │   ├── authMiddleware.js
+│   │   ├── rateLimiter.js
+│   │   ├── requireAdmin.js
+│   │   ├── socketThrottle.js
+│   │   └── validate.js
+│   ├── routes/
+│   │   └── health.js
+│   ├── schemas/
+│   │   ├── packetSchema.js     # includes explanation + mitre fields
+│   │   ├── settingsSchema.js
+│   │   └── adminSchema.js
+│   ├── memory_store.js         # LRU + TTL fallback store
+│   ├── traffic_simulator.js    # Packet generator + Redis queue
+│   └── index.js
+│
+├── ai-engine/                  # Python microservices
+│   ├── inference.py            # Model singleton — shared by app + worker
+│   ├── retrain.py              # APScheduler retraining job
+│   ├── mitre_tagger.py         # Declarative ATT&CK rule engine
+│   ├── mitre_techniques.py     # Technique catalog
+│   ├── app.py                  # Flask REST server (Gunicorn)
+│   ├── worker.py               # Redis queue consumer
+│   ├── requirements.txt        # Production deps
+│   ├── requirements-dev.txt    # + pytest, freezegun, pytest-mock
+│   └── Dockerfile              # Multi-stage, non-root appuser
+│
+├── docker-compose.yml          # server + ai-engine + ai-worker + redis
+└── .github/
+    └── workflows/
+        └── test.yml            # Jest + Pytest on every push to main
+```
+
+---
+
+## License
+
+MIT — see [LICENSE](LICENSE).
