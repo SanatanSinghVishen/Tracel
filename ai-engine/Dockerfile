@@ -31,17 +31,9 @@ WORKDIR /app
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
-# Create a non-root user
-RUN useradd -m -u 1000 tracel
-
-# Create model directory and assign ownership
-RUN mkdir -p /app/model && chown -R tracel:tracel /app/model
-
 # Copy application source code
 COPY inference.py app.py worker.py retrain.py mitre_tagger.py mitre_techniques.py gunicorn.conf.py start.sh ./
-RUN chown -R tracel:tracel /app/model && chmod +x start.sh
-
-USER tracel
+RUN chmod +x start.sh
 
 EXPOSE 5000
 
