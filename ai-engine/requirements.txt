@@ -2,6 +2,7 @@ Flask==3.0.3
 joblib==1.4.0
 scikit-learn==1.4.2
 pandas==2.2.2
+numpy<2.0.0
 python-dotenv==1.0.1
 pymongo==4.7.0
 redis==5.0.4
