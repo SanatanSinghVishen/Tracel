@@ -57,6 +57,8 @@ if (redisClient) {
                 const { packetData, emitPacket, persistPacket } = inFlight;
                 packetData.anomaly_score = Number.isFinite(Number(result.score)) ? Number(result.score) : null;
                 packetData.ai_id = result.id;
+                packetData.explanation = result.explanation || null;
+                packetData.mitre = result.mitre || null;
                 packetData.is_anomaly = false; // Will be set dynamically by emitPacket threshold logic
 
                 if (typeof emitPacket === 'function') {
@@ -537,6 +539,8 @@ function createTrafficStream({ owner, emitPacket, persistPacket, getAiReady } = 
                         const scoreNum = Number(rawScore);
                         packetData.anomaly_score = Number.isFinite(scoreNum) ? scoreNum : null;
                         packetData.ai_id = response?.data?.id || response?.data?.ai_id || aiId;
+                        packetData.explanation = response?.data?.explanation || null;
+                        packetData.mitre = response?.data?.mitre || null;
                         packetData.is_anomaly = false;
                         aiBackoffUntilMs = 0;
                         aiBackoffLevel = 0;
