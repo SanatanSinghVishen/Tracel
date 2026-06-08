@@ -694,16 +694,26 @@ def trigger_retrain():
         hours = int(os.getenv('RETRAIN_INTERVAL_HOURS', '24'))
     except ValueError:
         hours = 24
-        
-    success, msg = retrain.run_retrain_job(since_hours=hours)
-    app.last_retrain_status = msg
-    app.last_retrain_time = datetime.now().isoformat() + "Z"
-    
+
+    def _run():
+        try:
+            success, msg = retrain.run_retrain_job(since_hours=hours)
+            app.last_retrain_status = msg
+            app.last_retrain_time = datetime.now().isoformat() + "Z"
+            logger.info(f"Retrain finished: success={success} msg={msg}")
+        except Exception as e:
+            app.last_retrain_status = str(e)
+            app.last_retrain_time = datetime.now().isoformat() + "Z"
+            logger.error(f"Retrain thread error: {e}")
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+
     return jsonify({
-        "ok": success,
-        "msg": msg,
+        "ok": True,
+        "msg": "Retraining started in background",
         "since_hours": hours
-    }), 200 if success else 500
+    }), 202
 
 if __name__ == '__main__':
     host = os.getenv('HOST', '0.0.0.0')
