@@ -40,6 +40,7 @@ function initPeriodicSweep() {
     if (sweepInterval) return;
     sweepInterval = setInterval(() => {
         const now = Date.now();
+        let timeoutBurst = 0;
         for (const [id, inFlight] of inFlightPackets.entries()) {
             if (now - inFlight.enqueuedAt > AI_RESULT_TIMEOUT_MS) {
                 // Scenario B: Packet timeout
@@ -52,12 +53,15 @@ function initPeriodicSweep() {
                 
                 log.warn('AI result timeout', { packetId: id, waitedMs: now - inFlight.enqueuedAt, action: "safe_default_emitted" });
                 
-                if (typeof emitPacket === 'function') {
-                    try { emitPacket(packetData); } catch (e) { log.warn('emitPacket failed', e); }
-                }
-                if (typeof persistPacket === 'function') {
-                    try { persistPacket(packetData); } catch (e) { log.warn('persistPacket failed', e); }
-                }
+                timeoutBurst++;
+                setTimeout(() => {
+                    if (typeof emitPacket === 'function') {
+                        try { emitPacket(packetData); } catch (e) { log.warn('emitPacket failed', e); }
+                    }
+                    if (typeof persistPacket === 'function') {
+                        try { persistPacket(packetData); } catch (e) { log.warn('persistPacket failed', e); }
+                    }
+                }, Math.min(timeoutBurst * 10, 2000)); // cap staggering at 2 seconds
             }
         }
     }, Math.floor(AI_RESULT_TIMEOUT_MS / 2));
@@ -529,6 +533,26 @@ function createTrafficStream({ owner, emitPacket, persistPacket, getAiReady } = 
             
             // REDIS ASYNC QUEUE PATH
             if (redisClient && redisClient.status === 'ready') {
+                // Dynamic backpressure: bypass AI if worker is falling behind
+                if (inFlightPackets.size > 150) {
+                    packetData.is_anomaly = false;
+                    packetData.anomaly_score = null;
+                    packetData.ai_not_analyzed = true;
+                    
+                    if (typeof emitPacket === 'function') {
+                        try { emitPacket(packetData); } catch (e) { }
+                    }
+                    if (typeof persistPacket === 'function') {
+                        try { persistPacket(packetData); } catch (e) { }
+                    }
+                    
+                    const delay = isAttackMode
+                        ? (Math.random() < 0.15 ? 10 : (Math.floor(Math.random() * 70) + 20))
+                        : randomInt(1000, 10000);
+                    timer = setTimeout(generatePacket, delay);
+                    return; // exit early, let worker handle emit & persist for NEXT packets
+                }
+
                 inFlightPackets.set(aiId, { packetData, emitPacket, persistPacket, enqueuedAt: Date.now() });
 
                 try {
