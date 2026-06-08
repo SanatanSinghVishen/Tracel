@@ -34,19 +34,36 @@ def fetch_training_data(since_hours: int, min_samples: int = 1000):
     since = now - timedelta(hours=since_hours)
 
     logger.info(f"Fetching packets from {since} to {now}...")
-    
-    # We want regular packets (or both, but Isolation Forest works best on majority-normal traffic)
-    # Exclude packets with high_entropy=true since they are simulated attacks or anomalies
+
+    projection = {"_id": 0, "bytes": 1, "protocol": 1, "entropy": 1, "dst_port": 1, "port": 1}
+
+    # Pass 1: Prefer clean traffic (exclude simulated attacks)
     cursor = coll.find({
         "timestamp": {"$gte": since, "$lt": now},
         "high_entropy": {"$ne": True}
-    }, {"_id": 0, "bytes": 1, "protocol": 1, "entropy": 1, "dst_port": 1, "port": 1})
-    
+    }, projection)
     df = pd.DataFrame(list(cursor))
+    logger.info(f"Pass 1 (clean traffic, {since_hours}h): {len(df)} samples")
+
+    # Pass 2: Not enough clean samples — use ALL traffic in the same window
+    if len(df) < min_samples:
+        logger.warning(f"Not enough clean samples ({len(df)}), falling back to all traffic...")
+        cursor = coll.find({"timestamp": {"$gte": since, "$lt": now}}, projection)
+        df = pd.DataFrame(list(cursor))
+        logger.info(f"Pass 2 (all traffic, {since_hours}h): {len(df)} samples")
+
+    # Pass 3: Still not enough — widen to 7-day window
+    if len(df) < min_samples and since_hours < 168:
+        logger.warning(f"Still not enough ({len(df)}), widening to 168h window...")
+        since_wide = now - timedelta(hours=168)
+        cursor = coll.find({"timestamp": {"$gte": since_wide, "$lt": now}}, projection)
+        df = pd.DataFrame(list(cursor))
+        logger.info(f"Pass 3 (all traffic, 168h): {len(df)} samples")
+
     if len(df) < min_samples:
         raise ValueError(f"Not enough data to retrain: found {len(df)} samples, need at least {min_samples}.")
-        
-    logger.info(f"Fetched {len(df)} samples.")
+
+    logger.info(f"Fetched {len(df)} samples for training.")
     return df
 
 def process_and_train(df: pd.DataFrame):
