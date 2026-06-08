@@ -11,35 +11,29 @@ export default function FreshnessGuard({ children }) {
   const secondsAgo = lastPacketAt ? Math.floor((Date.now() - lastPacketAt) / 1000) : 0;
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+    <>
+      {children}
       <div style={{
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(255, 255, 255, 0.4)',
-        zIndex: 10,
+        position: 'fixed',
+        bottom: '20px',
+        right: '20px',
+        backgroundColor: 'rgba(0, 0, 0, 0.7)',
+        color: 'white',
+        padding: '8px 12px',
+        borderRadius: '20px',
+        fontFamily: 'Inter, sans-serif',
+        fontWeight: 500,
+        fontSize: '12px',
+        zIndex: 9999,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center',
-        backdropFilter: 'grayscale(0.5) blur(1px)'
+        gap: '6px',
+        boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+        backdropFilter: 'blur(4px)'
       }}>
-        <div style={{
-          backgroundColor: 'rgba(0, 0, 0, 0.7)',
-          color: 'white',
-          padding: '8px 16px',
-          borderRadius: '4px',
-          fontFamily: 'Inter, sans-serif',
-          fontWeight: 600,
-          fontSize: '14px'
-        }}>
-          Stream Paused {lastPacketAt ? `(Last updated ${secondsAgo}s ago)` : ''}
-        </div>
+        <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#ffc107' }} />
+        Stream Paused {lastPacketAt ? `(${secondsAgo}s ago)` : ''}
       </div>
-      <div style={{ opacity: 0.5 }}>
-        {children}
-      </div>
-    </div>
+    </>
   );
 }
