@@ -7,7 +7,6 @@ import threading
 
 from dotenv import load_dotenv, dotenv_values
 from inference import predict, reload_model
-from apscheduler.schedulers.background import BackgroundScheduler
 import retrain
 from pymongo import MongoClient
 
@@ -102,13 +101,9 @@ def health():
     elif not loaded_model:
         model_status = 'degraded'
         
-    # Get retrain job if scheduled
-    last_retrain = None
-    next_retrain = None
-    if 'scheduler' in globals():
-        for job in scheduler.get_jobs():
-            if job.name == '_scheduled_retrain':
-                next_retrain = job.next_run_time.isoformat() if job.next_run_time else None
+    # Get retrain job status
+    last_retrain_status = getattr(app, 'last_retrain_status', None)
+    last_retrain_time = getattr(app, 'last_retrain_time', None)
 
     payload = {
         "status": "ok" if model_status == 'ok' else model_status,
@@ -121,7 +116,8 @@ def health():
                 "path": str(inference.MODEL_PATH),
                 "explainer_initialized": explainer is not None,
                 "error": str(loaded_error) if loaded_error else None,
-                "next_retrain_at": next_retrain
+                "last_retrain_status": last_retrain_status,
+                "last_retrain_time": last_retrain_time
             }
         }
     }
@@ -668,7 +664,8 @@ def report_threat_intel():
         traceback.print_exc()
         return jsonify({"ok": False, "error": str(e)}), 500
 
-def _scheduled_retrain():
+@app.route('/retrain', methods=['POST'])
+def trigger_retrain():
     try:
         hours = int(os.getenv('RETRAIN_INTERVAL_HOURS', '24'))
     except ValueError:
@@ -677,6 +674,12 @@ def _scheduled_retrain():
     success, msg = retrain.run_retrain_job(since_hours=hours)
     app.last_retrain_status = msg
     app.last_retrain_time = datetime.now().isoformat() + "Z"
+    
+    return jsonify({
+        "ok": success,
+        "msg": msg,
+        "since_hours": hours
+    }), 200 if success else 500
 
 if __name__ == '__main__':
     host = os.getenv('HOST', '0.0.0.0')
@@ -689,15 +692,6 @@ if __name__ == '__main__':
     # Preload model so the first /predict doesn't pay load cost.
     import inference
     inference.reload_model()
-    
-    # Start the APScheduler for retraining
-    try:
-        hours = int(os.getenv('RETRAIN_INTERVAL_HOURS', '24'))
-    except ValueError:
-        hours = 24
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(_scheduled_retrain, 'interval', hours=hours)
-    scheduler.start()
     
     # Enable concurrency: the default dev server is single-threaded, which can
     # backlog under bursty traffic (Attack mode) and cause client-side timeouts.
