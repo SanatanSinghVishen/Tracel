@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Redis = require('ioredis');
 const { getDbStatus } = require('../config/database');
+const { getPendingClosuresCount } = require('../traffic_simulator');
 const http = require('http');
 
 let redisClient = null;
@@ -97,6 +98,7 @@ router.get('/', async (req, res) => {
         service: 'node-backend',
         version: version,
         uptime_s: Math.floor(uptime),
+        pending_closures: getPendingClosuresCount(),
         checks: checks
     };
 

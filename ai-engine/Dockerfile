@@ -31,9 +31,18 @@ WORKDIR /app
 # Copy installed packages from builder
 COPY --from=builder /install /usr/local
 
-# Copy application source code
-COPY inference.py app.py worker.py retrain.py mitre_tagger.py mitre_techniques.py gunicorn.conf.py start.sh ./
+# Create appuser and appgroup (UID/GID 1000)
+RUN groupadd -g 1000 appgroup && \
+    useradd -m -u 1000 -g appgroup appuser
+
+# Create model directory and assign ownership BEFORE switching users
+RUN mkdir -p /app/model && chown -R appuser:appgroup /app/model
+
+# Copy application source code with explicit ownership
+COPY --chown=appuser:appgroup inference.py app.py worker.py retrain.py mitre_tagger.py mitre_techniques.py gunicorn.conf.py start.sh ./
 RUN chmod +x start.sh
+
+USER appuser
 
 EXPOSE 5000
 

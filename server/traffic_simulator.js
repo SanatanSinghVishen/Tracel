@@ -27,13 +27,52 @@ const resultSchema = z.object({
 let redisClient = null;
 if (process.env.REDIS_URL) {
     redisClient = new Redis(process.env.REDIS_URL);
-    redisClient.on('error', (err) => log.warn('Redis error', { error: err.message }));
+    if (typeof redisClient.on === 'function') {
+        redisClient.on('error', (err) => log.warn('Redis error', { error: err.message }));
+    }
 }
 
+const AI_RESULT_TIMEOUT_MS = parseInt(process.env.AI_RESULT_TIMEOUT_MS, 10) || 10000;
 const inFlightPackets = new Map();
+let sweepInterval = null;
+
+function initPeriodicSweep() {
+    if (sweepInterval) return;
+    sweepInterval = setInterval(() => {
+        const now = Date.now();
+        for (const [id, inFlight] of inFlightPackets.entries()) {
+            if (now - inFlight.enqueuedAt > AI_RESULT_TIMEOUT_MS) {
+                // Scenario B: Packet timeout
+                inFlightPackets.delete(id);
+                const { packetData, emitPacket, persistPacket } = inFlight;
+                
+                packetData.is_anomaly = false;
+                packetData.anomaly_score = null;
+                packetData.ai_not_analyzed = true;
+                
+                log.warn('AI result timeout', { packetId: id, waitedMs: now - inFlight.enqueuedAt, action: "safe_default_emitted" });
+                
+                if (typeof emitPacket === 'function') {
+                    try { emitPacket(packetData); } catch (e) { log.warn('emitPacket failed', e); }
+                }
+                if (typeof persistPacket === 'function') {
+                    try { persistPacket(packetData); } catch (e) { log.warn('persistPacket failed', e); }
+                }
+            }
+        }
+    }, Math.floor(AI_RESULT_TIMEOUT_MS / 2));
+}
+
+function stopPeriodicSweep() {
+    if (sweepInterval) {
+        clearInterval(sweepInterval);
+        sweepInterval = null;
+    }
+}
 
 if (redisClient) {
     (async function startResultWorker() {
+        initPeriodicSweep();
         while (true) {
             try {
                 const item = await redisClient.brpop('tracel:ai:results', 5);
@@ -51,8 +90,14 @@ if (redisClient) {
                 }
 
                 const inFlight = inFlightPackets.get(result.id);
-                if (!inFlight) continue;
+                if (!inFlight) {
+                    // Late arrival (already timed out)
+                    log.warn('Late result arrived after timeout', { packetId: result.id, action: "dead_lettered_late_result" });
+                    await redisClient.lpush('tracel:ai:deadletter', json);
+                    continue;
+                }
                 inFlightPackets.delete(result.id);
+                log.debug('Normal result processed', { packetId: result.id, waitedMs: Date.now() - inFlight.enqueuedAt });
 
                 const { packetData, emitPacket, persistPacket } = inFlight;
                 packetData.anomaly_score = Number.isFinite(Number(result.score)) ? Number(result.score) : null;
@@ -484,13 +529,7 @@ function createTrafficStream({ owner, emitPacket, persistPacket, getAiReady } = 
             
             // REDIS ASYNC QUEUE PATH
             if (redisClient && redisClient.status === 'ready') {
-                inFlightPackets.set(aiId, { packetData, emitPacket, persistPacket });
-                
-                // Cleanup old in-flight packets to prevent memory leak if AI engine drops them
-                if (inFlightPackets.size > 10000) {
-                    const oldestKeys = Array.from(inFlightPackets.keys()).slice(0, 1000);
-                    oldestKeys.forEach(k => inFlightPackets.delete(k));
-                }
+                inFlightPackets.set(aiId, { packetData, emitPacket, persistPacket, enqueuedAt: Date.now() });
 
                 try {
                     await redisClient.lpush('tracel:ai:queue', JSON.stringify({
@@ -626,4 +665,8 @@ function createTrafficStream({ owner, emitPacket, persistPacket, getAiReady } = 
     };
 }
 
-module.exports = { createTrafficStream };
+module.exports = { 
+    createTrafficStream, 
+    getPendingClosuresCount: () => inFlightPackets.size,
+    stopPeriodicSweep
+};
