@@ -45,6 +45,9 @@ RUN mkdir -p /app/model
 COPY --chown=appuser:appgroup inference.py app.py worker.py retrain.py mitre_tagger.py mitre_techniques.py gunicorn.conf.py start.sh ./
 RUN chmod +x start.sh
 
+# Copy the pre-trained model folder
+COPY --chown=appuser:appgroup model/ ./model/
+
 # We MUST remain root in the Dockerfile so start.sh can chown the Railway volume.
 # start.sh will use gosu to securely drop privileges to appuser before running the app.
 
