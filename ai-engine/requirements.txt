@@ -1,11 +1,13 @@
-Flask==3.0.3
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+motor>=3.5.0
+pydantic>=2.8.0
 joblib==1.4.0
 scikit-learn==1.4.2
 pandas==2.2.2
 numpy<2.0.0
 python-dotenv==1.0.1
-pymongo==4.7.0
+pymongo>=4.7.0
 redis==5.0.4
-gunicorn==22.0.0
 APScheduler==3.11.2
 shap==0.45.1

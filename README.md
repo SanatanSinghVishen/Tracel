@@ -52,14 +52,15 @@ The system is designed to survive partial outages — if the AI engine goes down
            │ (Redis pub/sub)         │ (Redis pub/sub)
 ┌──────────▼──────────┐   ┌─────────▼────────────────────────┐
 │   Python AI Engine  │   │       Python AI Worker            │
-│   Flask · Gunicorn  │   │  worker.py · inference.py         │
-│   /health · /predict│   │  mitre_tagger.py · retrain.py     │
-│   APScheduler       │   │  Health server :9090              │
+│  FastAPI · Uvicorn  │   │  worker.py · inference.py         │
+│  Pydantic · Motor   │   │  mitre_tagger.py · retrain.py     │
+│  /health · /predict │   │  Health server :9090              │
+│  /docs (Swagger UI) │   │                                   │
 └──────────┬──────────┘   └──────────────────────────────────┘
            │
 ┌──────────▼──────────┐
 │   inference.py      │  ← single source of truth for the model
-│   IsolationForest   │     shared by Flask + worker
+│   IsolationForest   │     shared by FastAPI + worker
 │   TreeExplainer     │     hot-reloadable via reload_model()
 │   reload_model()    │
 └─────────────────────┘
@@ -184,7 +185,10 @@ Open [http://localhost:5173](http://localhost:5173).
 ### AI Engine (Python)
 | | |
 |---|---|
-| Server | Flask + Gunicorn |
+| Server | FastAPI + Uvicorn (ASGI, async) |
+| Validation | Pydantic v2 (request/response models) |
+| API Docs | Auto-generated Swagger UI (`/docs`) + ReDoc (`/redoc`) |
+| Async DB | Motor (async MongoDB driver) |
 | Model | scikit-learn IsolationForest |
 | Explainability | SHAP TreeExplainer |
 | Attack tagging | Custom MITRE ATT&CK rule engine |
@@ -306,7 +310,7 @@ REDIS_URL=
 MONGO_URL=
 
 # Performance
-GUNICORN_WORKERS=4
+UVICORN_WORKERS=1                # async handles concurrency; increase for CPU-bound
 AI_SLOW_REQUEST_MS=500
 ```
 
@@ -398,10 +402,11 @@ tracel/
 │   ├── retrain.py              # APScheduler retraining job
 │   ├── mitre_tagger.py         # Declarative ATT&CK rule engine
 │   ├── mitre_techniques.py     # Technique catalog
-│   ├── app.py                  # Flask REST server (Gunicorn)
+│   ├── app.py                  # FastAPI REST server (Uvicorn)
+│   ├── schemas.py              # Pydantic request/response models
 │   ├── worker.py               # Redis queue consumer
 │   ├── requirements.txt        # Production deps
-│   ├── requirements-dev.txt    # + pytest, freezegun, pytest-mock
+│   ├── requirements-dev.txt    # + pytest, freezegun, httpx
 │   └── Dockerfile              # Multi-stage, non-root appuser
 │
 ├── docker-compose.yml          # server + ai-engine + ai-worker + redis

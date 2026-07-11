@@ -427,7 +427,7 @@ async function checkAIHealth() {
         }
 
         // If root isn't ready, apply a 429-aware backoff by probing root again later.
-        // (Rate limiting can happen at the edge before the request reaches gunicorn.)
+        // (Rate limiting can happen at the edge before the request reaches uvicorn.)
         const res = await axios.get(new URL('/health', base).toString(), {
             timeout: Math.max(3000, getAiTimeoutMsForBase(base, 'health')),
             validateStatus: () => true,

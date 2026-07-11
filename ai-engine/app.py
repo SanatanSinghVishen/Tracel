@@ -1,60 +1,64 @@
 # ai-engine/app.py
-from flask import Flask, request, jsonify, g
-from pathlib import Path
+"""
+Tracel AI Engine — FastAPI application.
+
+Serves anomaly-detection predictions, threat-intelligence reports,
+and model-management endpoints over HTTP.
+"""
+from __future__ import annotations
+
+import asyncio
+import math
 import os
 import time
 import threading
 import logging
-from datetime import datetime
+import traceback
+from contextlib import asynccontextmanager
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from urllib.parse import urlparse, quote, unquote, urlunparse
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
-logger = logging.getLogger(__name__)
+from fastapi import FastAPI, Request, Query, BackgroundTasks
+from fastapi.responses import JSONResponse
 
 from dotenv import load_dotenv, dotenv_values
 from inference import predict, reload_model
 import retrain
 from pymongo import MongoClient
+import motor.motor_asyncio
 
-app = Flask(__name__)
+from schemas import (
+    PredictRequest,
+    PredictResponse,
+    HealthResponse,
+    HealthChecks,
+    ModelCheck,
+    ModelStatusResponse,
+    ReloadModelResponse,
+    RetrainResponse,
+    ThreatIntelResponse,
+    WindowInfo,
+    HostileIp,
+    AttackVectorEntry,
+    GeoCountry,
+    AiConfidenceDefinition,
+    AiConfidenceThresholds,
+    AiConfidenceBucket,
+    ErrorResponse,
+)
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+logger = logging.getLogger(__name__)
+
 START_TIME = time.time()
-
-
-@app.route('/', methods=['GET'])
-def root():
-    return jsonify(
-        {
-            'ok': True,
-            'service': 'ai-engine',
-            'endpoints': {
-                'health': '/health',
-                'predict': '/predict',
-            },
-        }
-    ), 200
-
-
-@app.before_request
-def _start_timer():
-    g._t0 = time.perf_counter()
-
-
-@app.after_request
-def _log_slow_requests(response):
-    try:
-        t0 = getattr(g, '_t0', None)
-        if t0 is None:
-            return response
-        dt_ms = (time.perf_counter() - t0) * 1000.0
-        # Only log slow-ish requests to keep noise down.
-        if dt_ms >= float(os.getenv('AI_SLOW_REQUEST_MS', '250')):
-            print(f"[AI] SLOW {request.method} {request.path} {response.status_code} {dt_ms:.1f}ms")
-        return response
-    except Exception:
-        return response
 
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_PATH = Path(os.getenv("MODEL_PATH", str(BASE_DIR / "model.pkl")))
+
+# ──────────────────────────────────────────────
+# Environment setup
+# ──────────────────────────────────────────────
 
 # Load env vars for this service.
 # IMPORTANT: do NOT blindly load server/.env, because it defines PORT=3001 for Express.
@@ -81,134 +85,9 @@ if _server_env_path.exists():
         pass
 
 
-@app.route('/admin/reload-model', methods=['POST'])
-def handle_reload_model():
-    success, msg = reload_model()
-    if success:
-        return jsonify({"ok": True, "message": msg}), 200
-    else:
-        return jsonify({"ok": False, "error": msg}), 500
-
-@app.route('/debug/db', methods=['GET'])
-def debug_db():
-    """Diagnostic endpoint: shows which MongoDB database/collection is visible to the AI engine."""
-    try:
-        mongo_url = _get_mongo_url()
-        db_name_env = _get_mongo_db_name()
-
-        # Sanitize URL for display (hide credentials)
-        safe_url = "not set"
-        if mongo_url:
-            try:
-                from urllib.parse import urlparse
-                p = urlparse(mongo_url)
-                safe_url = f"{p.scheme}://***@{p.hostname}{p.path}"
-            except Exception:
-                safe_url = mongo_url[:20] + "..."
-
-        if not mongo_url:
-            return jsonify({"error": "MONGO_URL not set", "safe_url": safe_url}), 503
-
-        client = MongoClient(mongo_url, serverSelectionTimeoutMS=5000,
-                             connectTimeoutMS=5000, socketTimeoutMS=5000)
-
-        result = {
-            "safe_url": safe_url,
-            "MONGO_DB_NAME_env": db_name_env or "(not set)",
-            "databases": [],
-        }
-
-        try:
-            dbs = client.list_database_names()
-            result["databases"] = dbs
-        except Exception as e:
-            result["databases_error"] = str(e)
-
-        # Check packets collection in each DB
-        collections_info = {}
-        for db_name in (result.get("databases") or []):
-            try:
-                db = client[db_name]
-                colls = db.list_collection_names()
-                pkt_count = 0
-                if "packets" in colls:
-                    pkt_count = db["packets"].estimated_document_count()
-                collections_info[db_name] = {"collections": colls, "packets_count": pkt_count}
-            except Exception as e:
-                collections_info[db_name] = {"error": str(e)}
-
-        result["collections_by_db"] = collections_info
-        return jsonify(result), 200
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/health', methods=['GET'])
-def health():
-    import inference
-    import os
-    
-    uptime = int(time.time() - START_TIME)
-    
-    with inference._model_lock:
-        loaded_model = inference._model
-        loaded_error = inference._model_error
-        explainer = inference._explainer
-        
-    model_status = 'ok'
-    if loaded_error:
-        model_status = 'error'
-    elif not loaded_model:
-        model_status = 'degraded'
-        
-    # Get retrain job status
-    last_retrain_status = getattr(app, 'last_retrain_status', None)
-    last_retrain_time = getattr(app, 'last_retrain_time', None)
-
-    payload = {
-        "status": "ok" if model_status == 'ok' else model_status,
-        "service": "ai-engine",
-        "version": "1.0.0",
-        "uptime_s": uptime,
-        "checks": {
-            "model": {
-                "status": model_status,
-                "path": str(inference.MODEL_PATH),
-                "explainer_initialized": explainer is not None,
-                "error": str(loaded_error) if loaded_error else None,
-                "last_retrain_status": last_retrain_status,
-                "last_retrain_time": last_retrain_time
-            }
-        }
-    }
-    
-    status_code = 200 if payload["status"] in ["ok", "degraded"] else 503
-    return jsonify(payload), status_code
-
-@app.route('/predict', methods=['POST'])
-def handle_predict():
-    try:
-        data = request.json or {}
-        result = predict(data)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/admin/model-status', methods=['GET'])
-def model_status():
-    import inference
-    with inference._model_lock:
-        is_loaded = inference._model is not None
-        err = inference._model_error
-    
-    return jsonify({
-        "ok": True,
-        "loaded": is_loaded,
-        "error": err,
-        "modelPath": str(inference.MODEL_PATH),
-        "lastRetrainStatus": getattr(app, 'last_retrain_status', None),
-        "lastRetrainTime": getattr(app, 'last_retrain_time', None),
-    }), 200
-
+# ──────────────────────────────────────────────
+# MongoDB helpers (shared by sync + async paths)
+# ──────────────────────────────────────────────
 
 def _get_mongo_url() -> str:
     url = (
@@ -217,7 +96,7 @@ def _get_mongo_url() -> str:
         or os.getenv('MONGO_URI')
         or ''
     ).strip()
-    
+
     if url:
         try:
             parsed = urlparse(url)
@@ -232,7 +111,7 @@ def _get_mongo_url() -> str:
                 url = urlunparse(parsed)
         except Exception as e:
             logger.warning(f"Failed to parse or escape MONGO_URL: {e}")
-            
+
     return url
 
 
@@ -240,13 +119,14 @@ def _get_mongo_db_name() -> str:
     return (os.getenv('MONGO_DB_NAME') or '').strip()
 
 
+# Sync pymongo helper — used by retrain.py (via import) and debug endpoint
 def _get_packets_collection():
     mongo_url = _get_mongo_url()
     if not mongo_url:
         return None, 'MONGO_URL not set for ai-engine'
 
     client = MongoClient(
-        mongo_url, 
+        mongo_url,
         serverSelectionTimeoutMS=5000,
         connectTimeoutMS=5000,
         socketTimeoutMS=5000
@@ -287,6 +167,267 @@ def _get_packets_collection():
     return db['packets'], None
 
 
+# ──────────────────────────────────────────────
+# Async Motor client (for /report/threat-intel)
+# ──────────────────────────────────────────────
+
+_motor_client: motor.motor_asyncio.AsyncIOMotorClient | None = None
+
+
+def _get_motor_client() -> motor.motor_asyncio.AsyncIOMotorClient | None:
+    global _motor_client
+    if _motor_client is not None:
+        return _motor_client
+    mongo_url = _get_mongo_url()
+    if not mongo_url:
+        return None
+    _motor_client = motor.motor_asyncio.AsyncIOMotorClient(
+        mongo_url,
+        serverSelectionTimeoutMS=5000,
+        connectTimeoutMS=5000,
+        socketTimeoutMS=5000,
+    )
+    return _motor_client
+
+
+async def _get_async_packets_collection():
+    """Return (collection, error_string) using the async Motor driver."""
+    client = _get_motor_client()
+    if client is None:
+        return None, 'MONGO_URL not set for ai-engine'
+
+    # Prefer default DB from connection string
+    db = None
+    try:
+        db = client.get_default_database()
+    except Exception:
+        db = None
+
+    if db is None:
+        explicit_name = _get_mongo_db_name() or None
+        candidates = [n for n in [explicit_name, 'tracel', 'test'] if n]
+
+        best_coll = None
+        for name in candidates:
+            try:
+                candidate_db = client[name]
+                candidate_coll = candidate_db['packets']
+                count = await candidate_coll.estimated_document_count()
+                if count > 0:
+                    best_coll = candidate_coll
+                    break
+                if best_coll is None:
+                    best_coll = candidate_coll
+            except Exception:
+                continue
+
+        if best_coll is None:
+            return None, 'MongoDB connection established, but no usable database found'
+        return best_coll, None
+
+    return db['packets'], None
+
+
+# ──────────────────────────────────────────────
+# Lifespan (startup / shutdown)
+# ──────────────────────────────────────────────
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: preload model so the first /predict doesn't pay load cost.
+    import inference
+    inference.reload_model()
+    logger.info("Model preloaded at startup.")
+    yield
+    # Shutdown: close Motor client cleanly.
+    global _motor_client
+    if _motor_client is not None:
+        _motor_client.close()
+        _motor_client = None
+
+
+# ──────────────────────────────────────────────
+# FastAPI application
+# ──────────────────────────────────────────────
+
+app = FastAPI(
+    title="Tracel AI Engine",
+    description="Anomaly detection and threat intelligence API for the Tracel network security platform.",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# Store retrain status on the app state object
+app.state.last_retrain_status = None
+app.state.last_retrain_time = None
+
+
+# ──────────────────────────────────────────────
+# Middleware: slow request logging
+# ──────────────────────────────────────────────
+
+@app.middleware("http")
+async def log_slow_requests(request: Request, call_next):
+    t0 = time.perf_counter()
+    response = await call_next(request)
+    dt_ms = (time.perf_counter() - t0) * 1000.0
+    threshold = float(os.getenv('AI_SLOW_REQUEST_MS', '250'))
+    if dt_ms >= threshold:
+        logger.warning(f"[AI] SLOW {request.method} {request.url.path} {response.status_code} {dt_ms:.1f}ms")
+    return response
+
+
+# ──────────────────────────────────────────────
+# Routes
+# ──────────────────────────────────────────────
+
+@app.get('/')
+async def root():
+    return {
+        'ok': True,
+        'service': 'ai-engine',
+        'endpoints': {
+            'health': '/health',
+            'predict': '/predict',
+            'docs': '/docs',
+        },
+    }
+
+
+@app.get('/health', response_model=HealthResponse)
+async def health():
+    import inference as _inf
+
+    uptime = int(time.time() - START_TIME)
+
+    with _inf._model_lock:
+        loaded_model = _inf._model
+        loaded_error = _inf._model_error
+        explainer = _inf._explainer
+
+    model_status = 'ok'
+    if loaded_error:
+        model_status = 'error'
+    elif not loaded_model:
+        model_status = 'degraded'
+
+    payload = HealthResponse(
+        status="ok" if model_status == 'ok' else model_status,
+        uptime_s=uptime,
+        checks=HealthChecks(
+            model=ModelCheck(
+                status=model_status,
+                path=str(_inf.MODEL_PATH),
+                explainer_initialized=explainer is not None,
+                error=str(loaded_error) if loaded_error else None,
+                last_retrain_status=app.state.last_retrain_status,
+                last_retrain_time=app.state.last_retrain_time,
+            )
+        ),
+    )
+
+    status_code = 200 if payload.status in ["ok", "degraded"] else 503
+    return JSONResponse(content=payload.model_dump(), status_code=status_code)
+
+
+@app.post('/predict', response_model=PredictResponse)
+async def handle_predict(data: PredictRequest):
+    try:
+        # Convert Pydantic model to dict for the existing predict() function
+        result = predict(data.model_dump())
+        return result
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+@app.post('/admin/reload-model', response_model=ReloadModelResponse)
+async def handle_reload_model():
+    success, msg = reload_model()
+    if success:
+        return ReloadModelResponse(ok=True, message=msg)
+    else:
+        return JSONResponse(
+            content=ReloadModelResponse(ok=False, error=msg).model_dump(),
+            status_code=500,
+        )
+
+
+@app.get('/admin/model-status', response_model=ModelStatusResponse)
+async def model_status():
+    import inference as _inf
+    with _inf._model_lock:
+        is_loaded = _inf._model is not None
+        err = _inf._model_error
+
+    return ModelStatusResponse(
+        loaded=is_loaded,
+        error=err,
+        modelPath=str(_inf.MODEL_PATH),
+        lastRetrainStatus=app.state.last_retrain_status,
+        lastRetrainTime=app.state.last_retrain_time,
+    )
+
+
+@app.get('/debug/db')
+async def debug_db():
+    """Diagnostic endpoint: shows which MongoDB database/collection is visible to the AI engine."""
+    try:
+        mongo_url = _get_mongo_url()
+        db_name_env = _get_mongo_db_name()
+
+        # Sanitize URL for display (hide credentials)
+        safe_url = "not set"
+        if mongo_url:
+            try:
+                p = urlparse(mongo_url)
+                safe_url = f"{p.scheme}://***@{p.hostname}{p.path}"
+            except Exception:
+                safe_url = mongo_url[:20] + "..."
+
+        if not mongo_url:
+            return JSONResponse(
+                content={"error": "MONGO_URL not set", "safe_url": safe_url},
+                status_code=503,
+            )
+
+        client = MongoClient(mongo_url, serverSelectionTimeoutMS=5000,
+                             connectTimeoutMS=5000, socketTimeoutMS=5000)
+
+        result = {
+            "safe_url": safe_url,
+            "MONGO_DB_NAME_env": db_name_env or "(not set)",
+            "databases": [],
+        }
+
+        try:
+            dbs = client.list_database_names()
+            result["databases"] = dbs
+        except Exception as e:
+            result["databases_error"] = str(e)
+
+        # Check packets collection in each DB
+        collections_info = {}
+        for db_name in (result.get("databases") or []):
+            try:
+                db = client[db_name]
+                colls = db.list_collection_names()
+                pkt_count = 0
+                if "packets" in colls:
+                    pkt_count = db["packets"].estimated_document_count()
+                collections_info[db_name] = {"collections": colls, "packets_count": pkt_count}
+            except Exception as e:
+                collections_info[db_name] = {"error": str(e)}
+
+        result["collections_by_db"] = collections_info
+        return result
+    except Exception as e:
+        return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+# ──────────────────────────────────────────────
+# Threat-intel helpers
+# ──────────────────────────────────────────────
+
 def _ip_to_country_name(ip: str) -> str:
     # Must stay in sync with dashboard/src/utils/geoData.js ordering.
     countries = [
@@ -324,23 +465,35 @@ def _classify_attack_vector(method: str, bytes_count: int) -> str:
     return 'Protocol'
 
 
-@app.route('/report/threat-intel', methods=['GET'])
-def report_threat_intel():
+async def _run_aggregation(coll, pipeline: list, allow_disk_use: bool = False) -> list:
+    """Run a Motor aggregation and collect results into a list."""
+    cursor = coll.aggregate(pipeline, allowDiskUse=allow_disk_use)
+    return await cursor.to_list(length=None)
+
+
+# ──────────────────────────────────────────────
+# /report/threat-intel  (async with Motor)
+# ──────────────────────────────────────────────
+
+@app.get('/report/threat-intel')
+async def report_threat_intel(
+    sinceHours: str = Query('24'),
+    ownerUserId: str = Query(''),
+):
     """Generate a simple SOC-facing threat intelligence summary.
 
     This reads packet data from MongoDB (same collection used by the Node server)
-    and uses pandas to compute aggregates.
+    and uses async Motor to compute aggregates concurrently.
     """
     try:
-        coll, err = _get_packets_collection()
+        coll, err = await _get_async_packets_collection()
         if coll is None:
-            return jsonify({"ok": False, "error": err}), 503
+            return JSONResponse(content={"ok": False, "error": err}, status_code=503)
 
-        since_hours = request.args.get('sinceHours', '24')
-        owner_user_id = (request.args.get('ownerUserId') or '').strip()
+        owner_user_id = (ownerUserId or '').strip()
 
         try:
-            since_hours = max(1, min(int(since_hours), 168))
+            since_hours = max(1, min(int(sinceHours), 168))
         except Exception:
             since_hours = 24
 
@@ -357,7 +510,6 @@ def report_threat_intel():
             base_match['owner_user_id'] = owner_user_id
 
         # Robust timestamp parsing: supports BSON Date and ISO-like strings.
-        # If conversion fails, ts becomes null and we drop it in the window match.
         add_ts = {
             '$addFields': {
                 'ts': {
@@ -520,71 +672,93 @@ def report_threat_intel():
             }
         }
 
-        # Total threats (exact)
-        total_rows = list(
-            coll.aggregate(
-                [
-                    {'$match': base_match},
-                    add_ts,
-                    window_match,
-                    {'$count': 'count'},
-                ]
-            )
+        # Build all 5 aggregation pipelines
+        total_pipeline = [
+            {'$match': base_match},
+            add_ts,
+            window_match,
+            {'$count': 'count'},
+        ]
+
+        ip_pipeline = [
+            {'$match': base_match},
+            add_ts,
+            window_match,
+            {
+                '$group': {
+                    '_id': {'$ifNull': ['$source_ip', '']},
+                    'count': {'$sum': 1},
+                    'lastSeen': {'$max': '$ts'},
+                }
+            },
+            {'$sort': {'count': -1, 'lastSeen': -1}},
+            {'$limit': 5},
+        ]
+
+        vector_pipeline = [
+            {'$match': base_match},
+            add_ts,
+            window_match,
+            {'$addFields': {'vector': vector_expr}},
+            {'$group': {'_id': '$vector', 'value': {'$sum': 1}}},
+        ]
+
+        country_pipeline = [
+            {'$match': base_match},
+            add_ts,
+            window_match,
+            {'$addFields': {'country': country_expr}},
+            {'$group': {'_id': '$country', 'count': {'$sum': 1}}},
+            {'$sort': {'count': -1}},
+            {'$limit': 5},
+        ]
+
+        score_pipeline = [
+            {'$match': base_match},
+            add_ts,
+            window_match,
+            {
+                '$project': {
+                    '_id': 0,
+                    'anomaly_score': 1,
+                }
+            },
+        ]
+
+        # Run ALL 5 aggregations concurrently via asyncio.gather
+        total_rows, ip_rows, vector_rows, country_rows, score_rows = await asyncio.gather(
+            _run_aggregation(coll, total_pipeline),
+            _run_aggregation(coll, ip_pipeline),
+            _run_aggregation(coll, vector_pipeline),
+            _run_aggregation(coll, country_pipeline),
+            _run_aggregation(coll, score_pipeline, allow_disk_use=True),
         )
+
         total = int((total_rows[0]['count'] if total_rows else 0) or 0)
 
         if total <= 0:
-            return jsonify(
-                {
-                    'ok': True,
-                    'window': {
-                        'since': since.isoformat() + 'Z',
-                        'to': now.isoformat() + 'Z',
-                        'sinceHours': since_hours,
-                    },
-                    'totalThreats': 0,
-                    'topHostileIps': [],
-                    'attackVectorDistribution': [
-                        {'name': 'Volumetric', 'value': 0},
-                        {'name': 'Protocol', 'value': 0},
-                        {'name': 'Application', 'value': 0},
-                    ],
-                    'geoTopCountries': [],
-                    'aiConfidenceDefinition': {
-                        'method': 'quantiles',
-                        'obvious': 'lowest ~20% anomaly scores (most suspicious)',
-                        'subtle': 'next ~40% anomaly scores',
-                        'other': 'remaining scores',
-                        'note': 'Buckets are relative to the selected time window.',
-                    },
-                    'aiConfidenceDistribution': [
-                        {'bucket': 'Obvious', 'count': 0},
-                        {'bucket': 'Subtle', 'count': 0},
-                        {'bucket': 'Other', 'count': 0},
-                    ],
-                    'generatedBy': 'ai-engine (mongo aggregation)',
-                }
+            return ThreatIntelResponse(
+                window=WindowInfo(
+                    since=since.isoformat() + 'Z',
+                    to=now.isoformat() + 'Z',
+                    sinceHours=since_hours,
+                ),
+                totalThreats=0,
+                topHostileIps=[],
+                attackVectorDistribution=[
+                    AttackVectorEntry(name='Volumetric', value=0),
+                    AttackVectorEntry(name='Protocol', value=0),
+                    AttackVectorEntry(name='Application', value=0),
+                ],
+                geoTopCountries=[],
+                aiConfidenceDistribution=[
+                    AiConfidenceBucket(bucket='Obvious', count=0),
+                    AiConfidenceBucket(bucket='Subtle', count=0),
+                    AiConfidenceBucket(bucket='Other', count=0),
+                ],
             )
 
-        # Top hostile IPs (exact)
-        ip_rows = list(
-            coll.aggregate(
-                [
-                    {'$match': base_match},
-                    add_ts,
-                    window_match,
-                    {
-                        '$group': {
-                            '_id': {'$ifNull': ['$source_ip', '']},
-                            'count': {'$sum': 1},
-                            'lastSeen': {'$max': '$ts'},
-                        }
-                    },
-                    {'$sort': {'count': -1, 'lastSeen': -1}},
-                    {'$limit': 5},
-                ]
-            )
-        )
+        # Top hostile IPs
         top_hostile = []
         for r in ip_rows:
             ip = str(r.get('_id') or '')
@@ -595,69 +769,29 @@ def report_threat_intel():
                     last_seen_iso = dt.isoformat() + 'Z'
             except Exception:
                 last_seen_iso = None
-            top_hostile.append(
-                {
-                    'ip': ip,
-                    'count': int(r.get('count') or 0),
-                    'lastSeen': last_seen_iso,
-                }
-            )
+            top_hostile.append(HostileIp(
+                ip=ip,
+                count=int(r.get('count') or 0),
+                lastSeen=last_seen_iso,
+            ))
 
-        # Attack vector distribution (exact)
-        vector_rows = list(
-            coll.aggregate(
-                [
-                    {'$match': base_match},
-                    add_ts,
-                    window_match,
-                    {'$addFields': {'vector': vector_expr}},
-                    {'$group': {'_id': '$vector', 'value': {'$sum': 1}}},
-                ]
-            )
-        )
+        # Attack vector distribution
         vector_counts = {str(r.get('_id') or ''): int(r.get('value') or 0) for r in vector_rows}
         vector_dist = [
-            {'name': 'Volumetric', 'value': int(vector_counts.get('Volumetric', 0))},
-            {'name': 'Protocol', 'value': int(vector_counts.get('Protocol', 0))},
-            {'name': 'Application', 'value': int(vector_counts.get('Application', 0))},
+            AttackVectorEntry(name='Volumetric', value=int(vector_counts.get('Volumetric', 0))),
+            AttackVectorEntry(name='Protocol', value=int(vector_counts.get('Protocol', 0))),
+            AttackVectorEntry(name='Application', value=int(vector_counts.get('Application', 0))),
         ]
 
-        # Geo breakdown (exact)
-        country_rows = list(
-            coll.aggregate(
-                [
-                    {'$match': base_match},
-                    add_ts,
-                    window_match,
-                    {'$addFields': {'country': country_expr}},
-                    {'$group': {'_id': '$country', 'count': {'$sum': 1}}},
-                    {'$sort': {'count': -1}},
-                    {'$limit': 5},
-                ]
-            )
-        )
+        # Geo breakdown
         geo_top = []
         for r in country_rows:
             name = str(r.get('_id') or '')
             c = int(r.get('count') or 0)
             pct = round((c / total) * 100) if total > 0 else 0
-            geo_top.append({'name': name, 'count': c, 'pct': int(pct)})
+            geo_top.append(GeoCountry(name=name, count=c, pct=int(pct)))
 
-        # AI confidence distribution (exact quantiles over full window)
-        score_rows = coll.aggregate(
-            [
-                {'$match': base_match},
-                add_ts,
-                window_match,
-                {
-                    '$project': {
-                        '_id': 0,
-                        'anomaly_score': 1,
-                    }
-                },
-            ],
-            allowDiskUse=True,
-        )
+        # AI confidence distribution (quantiles over full window)
         scores = []
         for r in score_rows:
             s = r.get('anomaly_score')
@@ -673,7 +807,7 @@ def report_threat_intel():
         obvious = 0
         subtle = 0
         other = int(total)
-        thresholds = {'obviousLe': None, 'subtleLe': None}
+        thresholds = AiConfidenceThresholds()
 
         if scores:
             s_sorted = sorted(scores)
@@ -693,7 +827,7 @@ def report_threat_intel():
 
                 q_obvious = _quantile(s_sorted, 0.20)
                 q_subtle = _quantile(s_sorted, 0.60)
-                thresholds = {'obviousLe': q_obvious, 'subtleLe': q_subtle}
+                thresholds = AiConfidenceThresholds(obviousLe=q_obvious, subtleLe=q_subtle)
 
                 for s in scores:
                     if s <= q_obvious:
@@ -710,43 +844,40 @@ def report_threat_intel():
                 obvious = n_obvious
                 subtle = n_subtle
                 other = int(total - obvious - subtle)
-                thresholds = {'obviousLe': float(s_sorted[min(n_obvious - 1, n - 1)]), 'subtleLe': float(s_sorted[min(n_obvious + n_subtle - 1, n - 1)])}
+                thresholds = AiConfidenceThresholds(
+                    obviousLe=float(s_sorted[min(n_obvious - 1, n - 1)]),
+                    subtleLe=float(s_sorted[min(n_obvious + n_subtle - 1, n - 1)]),
+                )
 
-        return jsonify(
-            {
-                'ok': True,
-                'window': {
-                    'since': since.isoformat() + 'Z',
-                    'to': now.isoformat() + 'Z',
-                    'sinceHours': since_hours,
-                },
-                'totalThreats': total,
-                'topHostileIps': top_hostile,
-                'attackVectorDistribution': vector_dist,
-                'geoTopCountries': geo_top,
-                'aiConfidenceDefinition': {
-                    'method': 'quantiles',
-                    'obvious': 'lowest ~20% anomaly scores (most suspicious)',
-                    'subtle': 'next ~40% anomaly scores',
-                    'other': 'remaining scores',
-                    'note': 'Buckets are relative to the selected time window.',
-                },
-                'aiConfidenceThresholds': thresholds,
-                'aiConfidenceDistribution': [
-                    {'bucket': 'Obvious', 'count': obvious},
-                    {'bucket': 'Subtle', 'count': subtle},
-                    {'bucket': 'Other', 'count': other},
-                ],
-                'generatedBy': 'ai-engine (mongo aggregation)',
-            }
+        return ThreatIntelResponse(
+            window=WindowInfo(
+                since=since.isoformat() + 'Z',
+                to=now.isoformat() + 'Z',
+                sinceHours=since_hours,
+            ),
+            totalThreats=total,
+            topHostileIps=top_hostile,
+            attackVectorDistribution=vector_dist,
+            geoTopCountries=geo_top,
+            aiConfidenceThresholds=thresholds,
+            aiConfidenceDistribution=[
+                AiConfidenceBucket(bucket='Obvious', count=obvious),
+                AiConfidenceBucket(bucket='Subtle', count=subtle),
+                AiConfidenceBucket(bucket='Other', count=other),
+            ],
         )
     except Exception as e:
-        print(f"report_threat_intel error: {e}")
+        logger.error(f"report_threat_intel error: {e}")
         traceback.print_exc()
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return JSONResponse(content={"ok": False, "error": str(e)}, status_code=500)
 
-@app.route('/retrain', methods=['POST'])
-def trigger_retrain():
+
+# ──────────────────────────────────────────────
+# /retrain
+# ──────────────────────────────────────────────
+
+@app.post('/retrain', response_model=RetrainResponse, status_code=202)
+async def trigger_retrain(background_tasks: BackgroundTasks):
     try:
         hours = int(os.getenv('RETRAIN_INTERVAL_HOURS', '24'))
     except ValueError:
@@ -755,47 +886,48 @@ def trigger_retrain():
     def _run():
         try:
             success, msg = retrain.run_retrain_job(since_hours=hours)
-            app.last_retrain_status = msg
-            app.last_retrain_time = datetime.now().isoformat() + "Z"
+            app.state.last_retrain_status = msg
+            app.state.last_retrain_time = datetime.now().isoformat() + "Z"
             logger.info(f"Retrain finished: success={success} msg={msg}")
         except ValueError as ve:
             # Not enough data in the requested window — widen to 7 days and retry
             logger.warning(f"Not enough data in last {hours}h, retrying with 168h window: {ve}")
             try:
                 success, msg = retrain.run_retrain_job(since_hours=168)
-                app.last_retrain_status = msg
-                app.last_retrain_time = datetime.now().isoformat() + "Z"
+                app.state.last_retrain_status = msg
+                app.state.last_retrain_time = datetime.now().isoformat() + "Z"
                 logger.info(f"Retrain (168h retry) finished: success={success} msg={msg}")
             except Exception as e2:
-                app.last_retrain_status = str(e2)
-                app.last_retrain_time = datetime.now().isoformat() + "Z"
+                app.state.last_retrain_status = str(e2)
+                app.state.last_retrain_time = datetime.now().isoformat() + "Z"
                 logger.error(f"Retrain (168h retry) failed: {e2}")
         except Exception as e:
-            app.last_retrain_status = str(e)
-            app.last_retrain_time = datetime.now().isoformat() + "Z"
+            app.state.last_retrain_status = str(e)
+            app.state.last_retrain_time = datetime.now().isoformat() + "Z"
             logger.error(f"Retrain thread error: {e}")
 
+    # Use a thread for retrain since it uses sync pymongo and CPU-heavy sklearn
     t = threading.Thread(target=_run, daemon=True)
     t.start()
 
-    return jsonify({
-        "ok": True,
-        "msg": "Retraining started in background",
-        "since_hours": hours
-    }), 202
+    return RetrainResponse(
+        msg="Retraining started in background",
+        since_hours=hours,
+    )
+
+
+# ──────────────────────────────────────────────
+# Dev server entrypoint
+# ──────────────────────────────────────────────
 
 if __name__ == '__main__':
+    import uvicorn
+
     host = os.getenv('HOST', '0.0.0.0')
     try:
         port = int(os.getenv('PORT', '5000'))
     except Exception:
         port = 5000
     print(f"AI Service running on http://{host}:{port}")
-    
-    # Preload model so the first /predict doesn't pay load cost.
-    import inference
-    inference.reload_model()
-    
-    # Enable concurrency: the default dev server is single-threaded, which can
-    # backlog under bursty traffic (Attack mode) and cause client-side timeouts.
-    app.run(host=host, port=port, threaded=True)
+
+    uvicorn.run("app:app", host=host, port=port, reload=True)

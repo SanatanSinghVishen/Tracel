@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 import {
   SiExpress,
-  SiFlask,
+  SiFastapi,
   SiMongodb,
   SiMongoose,
   SiNodedotjs,
@@ -422,7 +422,7 @@ export default function About() {
                   <SiPython className="w-4 h-4 text-tracel-accent-blue" /> Python
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
-                  <SiFlask className="w-4 h-4 text-slate-100" /> Flask
+                  <SiFastapi className="w-4 h-4 text-emerald-400" /> FastAPI
                 </div>
                 <div className="inline-flex items-center gap-2 rounded-xl border border-white/10 glass px-2.5 py-1.5 text-xs text-slate-200 hover:bg-white/10 transition">
                   <SiScikitlearn className="w-4 h-4 text-tracel-accent-blue" /> scikit-learn

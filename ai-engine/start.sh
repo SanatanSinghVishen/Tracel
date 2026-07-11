@@ -11,6 +11,6 @@ chown -R appuser:appgroup /app/model
 echo "Starting AI Engine Queue Worker..."
 gosu appuser python worker.py &
 
-# Start the Web API (Gunicorn) in the foreground as appuser
-echo "Starting Gunicorn Web Server..."
-exec gosu appuser gunicorn app:app --config gunicorn.conf.py
+# Start the Web API (Uvicorn) in the foreground as appuser
+echo "Starting Uvicorn Web Server..."
+exec gosu appuser uvicorn app:app --host 0.0.0.0 --port ${PORT:-5000} --workers ${UVICORN_WORKERS:-1} --log-level info

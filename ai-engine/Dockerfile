@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends gosu && rm -rf 
 RUN mkdir -p /app/model
 
 # Copy application source code with explicit ownership
-COPY --chown=appuser:appgroup inference.py app.py worker.py retrain.py mitre_tagger.py mitre_techniques.py gunicorn.conf.py start.sh ./
+COPY --chown=appuser:appgroup inference.py app.py worker.py retrain.py mitre_tagger.py mitre_techniques.py schemas.py start.sh ./
 RUN chmod +x start.sh
 
 # Copy the pre-trained model folder
