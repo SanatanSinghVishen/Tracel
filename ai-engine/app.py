@@ -304,6 +304,10 @@ async def health():
         loaded_model = _inf._model
         loaded_error = _inf._model_error
         explainer = _inf._explainer
+        
+        threshold = None
+        if isinstance(loaded_model, dict):
+            threshold = loaded_model.get('threshold')
 
     model_status = 'ok'
     if loaded_error:
@@ -314,6 +318,9 @@ async def health():
     payload = HealthResponse(
         status="ok" if model_status == 'ok' else model_status,
         uptime_s=uptime,
+        ok=model_status in ["ok", "degraded"],
+        modelLoaded=loaded_model is not None,
+        threshold=threshold,
         checks=HealthChecks(
             model=ModelCheck(
                 status=model_status,

@@ -44,6 +44,8 @@ class TestHealthEndpoint:
         assert data["service"] == "ai-engine"
         assert data["version"] == "1.0.0"
         assert "uptime_s" in data
+        assert "modelLoaded" in data
+        assert "threshold" in data
         assert "checks" in data
         assert "model" in data["checks"]
 

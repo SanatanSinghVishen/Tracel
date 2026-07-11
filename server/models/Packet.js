@@ -22,6 +22,20 @@ const PacketSchema = new mongoose.Schema({
     // Optional correlation id echoed by the AI service.
     ai_id: { type: String },
 
+    explanation: [
+        {
+            feature: String,
+            shap_value: Number,
+            actual_value: Number,
+        }
+    ],
+    mitre: {
+        technique_id: String,
+        technique_name: String,
+        tactic: String,
+        confidence: String,
+    },
+
     // Dynamic threshold telemetry (computed in Node).
     anomaly_threshold: { type: Number },
     anomaly_mean: { type: Number },

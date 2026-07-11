@@ -68,6 +68,9 @@ class HealthResponse(BaseModel):
     version: str = "1.0.0"
     uptime_s: int
     checks: HealthChecks
+    ok: bool = True
+    modelLoaded: Optional[bool] = None
+    threshold: Optional[float] = None
 
 
 # ──────────────────────────────────────────────
