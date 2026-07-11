@@ -76,7 +76,12 @@ def _reload_model_unsafe():
             _model_error = None
             try:
                 base_model = _model.get('model') if isinstance(_model, dict) else _model
-                _explainer = shap.TreeExplainer(base_model)
+                if base_model.__class__.__name__ == 'Pipeline':
+                    # Pipeline wraps scaler + model; extract the estimator step at the end
+                    iforest_model = base_model.steps[-1][1]
+                    _explainer = shap.TreeExplainer(iforest_model)
+                else:
+                    _explainer = shap.TreeExplainer(base_model)
             except Exception as e:
                 logger.error(f"Failed to initialize SHAP TreeExplainer: {e}")
                 _explainer = None
@@ -164,7 +169,18 @@ def predict(data: dict) -> dict:
 
     if explainer is not None:
         try:
-            shap_values = explainer.shap_values(X_eval)[0]
+            # If the model is a Pipeline, scale the features first
+            if isinstance(m, dict) and m.get('model').__class__.__name__ == 'Pipeline':
+                pipeline = m.get('model')
+                scaler = pipeline.steps[0][1]
+                X_scaled = pd.DataFrame(
+                    scaler.transform(X_eval),
+                    columns=X_eval.columns,
+                    index=X_eval.index
+                )
+                shap_values = explainer.shap_values(X_scaled)[0]
+            else:
+                shap_values = explainer.shap_values(X_eval)[0]
             feature_names = X_eval.columns.tolist()
             
             contributions = []
