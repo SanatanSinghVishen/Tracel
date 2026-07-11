@@ -151,11 +151,7 @@ export default function Settings() {
               <Wifi size={16} className="text-slate-200" /> Connections
             </div>
             <div className="mt-3 text-sm text-slate-200">
-              <div>
-                <span className="text-slate-400">Socket server:</span>{' '}
-                <span className="data-mono text-slate-100">{connection.serverUrl}</span>
-              </div>
-              <div className="mt-1 flex items-center gap-2">
+              <div className="flex items-center gap-2">
                 <span className="text-slate-400">Status:</span>
                 <span className={connection.connected ? 'pulse-dot' : 'pulse-dot pulse-dot--off'} />
                 <span className="text-slate-200">{connection.connected ? 'Connected' : 'Disconnected'}</span>

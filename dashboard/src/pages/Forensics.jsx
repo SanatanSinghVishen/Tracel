@@ -1768,8 +1768,6 @@ export default function Forensics() {
               <div className="text-sm text-slate-300 flex items-center gap-2 flex-wrap">
                 <span className={connection.connected ? 'pulse-dot' : 'pulse-dot pulse-dot--off'} />
                 <span>{connection.connected ? 'Socket connected' : 'Socket disconnected'}</span>
-                <span className="text-slate-600">•</span>
-                <span className="text-slate-400">API:</span> <span className="data-mono text-slate-200">{connection.serverUrl}</span>
               </div>
               <div className="text-sm text-slate-400">
                 {loading ? 'Loading…' : `${packets.length} records`}
